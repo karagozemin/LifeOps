@@ -24,26 +24,43 @@ export interface LifeOpsResult {
   total_money_at_risk_usd: number;
   ics_base64: string;
   confidence: number;
+  documents_scanned: number;
 }
 
 export interface PaymentTx {
   ts: string;
   service: string;
   caller: string;
-  amount_usdt: number;
+  amount: number;
+  asset: string;
+  network: string;
+  chain: string;
   tx_hash: string;
   status: string;
+  mode: string;
   protocol: string;
 }
 
 export interface ScanResponse {
   payment: PaymentTx;
   result: LifeOpsResult;
+  result_id: string;
+  ics_url: string | null;
+}
+
+export interface PaymentRequirements {
+  scheme: string;
+  network: string;
+  asset: string;
+  amount: string;
+  payTo: string;
+  description?: string;
 }
 
 export interface Payment402 {
   error: string;
   message: string;
+  payment_requirements?: PaymentRequirements;
   how_to_pay: string;
 }
 

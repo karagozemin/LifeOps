@@ -18,6 +18,7 @@ class DocumentType(str, Enum):
     subscription = "subscription"
     bill = "bill"
     appointment = "appointment"
+    multi = "multi"
     unknown = "unknown"
 
 
@@ -47,6 +48,7 @@ class LifeOpsResult(BaseModel):
     total_money_at_risk_usd: float = 0.0
     ics_base64: str = ""
     confidence: float = Field(..., ge=0.0, le=1.0)
+    documents_scanned: int = Field(default=1, description="Number of documents parsed (multi_audit)")
 
 
 class ScanRequest(BaseModel):

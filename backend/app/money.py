@@ -41,6 +41,9 @@ def estimate_risk(doc_type: str, amount_usd: float | None = None) -> dict:
         elif doc_type == "warranty":
             # Out of warranty = the device itself
             money = round(amount_usd, 2)
+        elif doc_type in ("passport", "visa", "drivers_license"):
+            # A stated amount (e.g. prepaid trip) adds to the baseline penalty
+            money = round(amount_usd + profile["base"], 2)
 
     return {
         "money_at_risk_usd": money,

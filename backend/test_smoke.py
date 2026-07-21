@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import base64
 
-from app.pipeline import process
+from app.pipeline import process, process_multi
 from app.schema import LifeOpsResult
 
 CASES = {
@@ -33,7 +33,31 @@ def main():
         assert ics_ok, f"{name}: .ics not generated"
         ok += 1
 
-    print(f"\nPASS: {ok}/{len(CASES)} scenarios produced a guaranteed schema + valid .ics (no LLM).")
+    # ---- multi_audit: 3 documents in one payload -> ONE merged audit ----
+    bundle = "\n---\n".join([
+        CASES["passport"],
+        CASES["subscription"],
+        CASES["bill"],
+    ])
+    multi = process_multi(bundle)
+    LifeOpsResult(**multi)
+    assert multi["document_type"] == "multi", "multi_audit: wrong document_type"
+    assert multi["documents_scanned"] == 3, f"multi_audit: expected 3 docs, got {multi['documents_scanned']}"
+    assert len(multi["obligations"]) >= 3, "multi_audit: obligations not merged"
+    # urgency ordering: most urgent first
+    days = [o["days_remaining"] for o in multi["obligations"]]
+    assert days == sorted(days), "multi_audit: obligations not sorted by urgency"
+    # aggregated risk = sum of parts
+    total = round(sum(o["money_at_risk_usd"] for o in multi["obligations"]), 2)
+    assert multi["total_money_at_risk_usd"] == total, "multi_audit: total risk mismatch"
+    ics_ok = base64.b64decode(multi["ics_base64"]).startswith(b"BEGIN:VCALENDAR")
+    assert ics_ok, "multi_audit: combined .ics not generated"
+    print(f"OK  multi_audit  | docs={multi['documents_scanned']} "
+          f"| obligations={len(multi['obligations'])} "
+          f"| total_risk=${multi['total_money_at_risk_usd']} | .ics=OK")
+    ok += 1
+
+    print(f"\nPASS: {ok}/{len(CASES) + 1} scenarios produced a guaranteed schema + valid .ics (no LLM).")
 
 
 if __name__ == "__main__":

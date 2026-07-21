@@ -9,8 +9,15 @@ function urgency(days: number): { label: string; cls: string } {
   return { label: "PLANNED", cls: "bg-ok/15 text-ok border-ok/40" };
 }
 
-export default function ResultView({ result }: { result: LifeOpsResult }) {
+export default function ResultView({
+  result,
+  icsUrl,
+}: {
+  result: LifeOpsResult;
+  icsUrl?: string | null;
+}) {
   const { entities } = result;
+  const isMulti = result.document_type === "multi";
 
   return (
     <div className="space-y-4">
@@ -20,12 +27,17 @@ export default function ResultView({ result }: { result: LifeOpsResult }) {
           <span className="rounded-md border border-edge bg-panel px-2.5 py-1 font-mono text-xs uppercase tracking-wide text-accent">
             {result.document_type}
           </span>
+          {isMulti && (
+            <span className="rounded-md border border-warn/40 bg-warn/10 px-2.5 py-1 font-mono text-xs text-warn">
+              {result.documents_scanned} docs audited
+            </span>
+          )}
           <span className="text-xs text-gray-500">
             confidence {(result.confidence * 100).toFixed(0)}%
           </span>
         </div>
         <a
-          href={icsDownloadUrl()}
+          href={icsDownloadUrl(icsUrl)}
           className="rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-sm font-medium text-accent transition hover:bg-accent/20"
         >
           ⬇ Download .ics

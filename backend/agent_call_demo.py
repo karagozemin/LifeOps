@@ -16,7 +16,7 @@ import urllib.request
 BASE = "http://localhost:8000"
 
 
-def _post(path: str, payload: dict, headers: dict | None = None) -> tuple[int, dict]:
+def _post(path: str, payload: dict, headers: dict | None = None) -> tuple[int, dict, dict]:
     data = json.dumps(payload).encode()
     req = urllib.request.Request(BASE + path, data=data, method="POST")
     req.add_header("Content-Type", "application/json")
@@ -24,9 +24,9 @@ def _post(path: str, payload: dict, headers: dict | None = None) -> tuple[int, d
         req.add_header(k, v)
     try:
         with urllib.request.urlopen(req) as r:
-            return r.status, json.loads(r.read())
+            return r.status, json.loads(r.read()), dict(r.headers)
     except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read())
+        return e.code, json.loads(e.read()), dict(e.headers)
 
 
 def main():
@@ -39,19 +39,25 @@ def main():
 
     print("[TravelPlanner-Agent] calling LifeOps...\n")
 
-    # 1) Unpaid call -> expect 402
-    status, body = _post("/scan", payload)
+    # 1) Unpaid call -> expect 402 + PAYMENT-REQUIRED header (A2MCP spec)
+    status, body, headers = _post("/scan", payload)
     print(f"1. Unpaid call -> HTTP {status}")
-    print(f"   {body.get('message', body)}\n")
+    print(f"   {body.get('message', body)}")
+    pr = headers.get("payment-required") or headers.get("PAYMENT-REQUIRED")
+    if pr:
+        import base64
+        print(f"   PAYMENT-REQUIRED: {json.loads(base64.b64decode(pr))}")
+    print()
 
     if status != 402:
         print("Expected 402 but got a different response.")
         sys.exit(1)
 
     # 2) Retry with x402 payment
-    print("2. Sending x402 payment (A2MCP)...")
-    status, body = _post("/scan", payload, headers={"X-Payment": "demo"})
-    print(f"   -> HTTP {status} | tx: {body['payment']['tx_hash']} | {body['payment']['amount_usdt']} USDT\n")
+    print("2. Settling payment via A2MCP (X Layer / USDT0)...")
+    status, body, _ = _post("/scan", payload, headers={"X-Payment": "demo"})
+    p = body["payment"]
+    print(f"   -> HTTP {status} | tx: {p['tx_hash']} | {p['amount']} {p['asset']} on {p['network']}\n")
 
     result = body["result"]
     print("3. Guaranteed JSON returned by LifeOps:")

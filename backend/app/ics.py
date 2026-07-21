@@ -5,7 +5,7 @@ Emits a VEVENT for every obligation and reminder, returns base64.
 from __future__ import annotations
 
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def _fold(line: str) -> str:
@@ -27,7 +27,7 @@ def _dt(date_iso: str) -> str:
 
 def build_ics(obligations: list[dict], reminders: list[str], title_prefix: str = "LifeOps") -> str:
     """Build .ics from obligations + reminders, return a base64 string."""
-    now = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",

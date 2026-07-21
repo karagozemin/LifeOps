@@ -31,13 +31,12 @@ export async function scanWithX402(
   });
 
   if (res402.status === 402) {
-    const price = res402.headers.get("x402-price");
-    const currency = res402.headers.get("x402-currency");
-    const network = res402.headers.get("x402-network");
     const info = (await res402.json()) as Payment402;
+    const req = info.payment_requirements;
+    const human = req ? Number(req.amount) / 1e6 : null;
     onStep({
       kind: "http",
-      text: `← HTTP 402 Payment Required · ${price} ${currency} on ${network}`,
+      text: `← HTTP 402 + PAYMENT-REQUIRED · ${human ?? "?"} USDT0 on X Layer (${req?.network ?? "eip155:196"})`,
     });
     onStep({ kind: "info", text: info.message });
   } else {
@@ -48,7 +47,7 @@ export async function scanWithX402(
   }
 
   // --- 2) paid call ----------------------------------------------------------
-  onStep({ kind: "info", text: "Settling x402 payment (A2MCP)…" });
+  onStep({ kind: "info", text: "Settling payment via A2MCP (X Layer / USDT0)…" });
   const resPaid = await fetch(`${API_BASE}/scan`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Payment": "demo" },
@@ -64,7 +63,7 @@ export async function scanWithX402(
   const tx: PaymentTx = data.payment;
   onStep({
     kind: "tx",
-    text: `settled ${tx.amount_usdt} USDT · ${tx.tx_hash}`,
+    text: `settled ${tx.amount} ${tx.asset} on ${tx.network} · ${tx.tx_hash}`,
   });
   onStep({
     kind: "ok",
@@ -74,6 +73,7 @@ export async function scanWithX402(
   return data;
 }
 
-export function icsDownloadUrl(): string {
-  return `${API_BASE}/ics/latest.ics`;
+export function icsDownloadUrl(icsPath?: string | null): string {
+  // Per-result URL when available (concurrency-safe), else latest.
+  return `${API_BASE}${icsPath ?? "/ics/latest.ics"}`;
 }
