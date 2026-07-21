@@ -1,0 +1,7 @@
+ELECTRICITY BILL
+Account: Alex Morgan
+Meter No: 998877
+Period: July 2026
+Amount Due: 45.00 USD
+Payment Due Date: 07/22/2026
+A 5% late fee applies for late payment and service may be interrupted.

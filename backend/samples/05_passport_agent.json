@@ -1,0 +1,5 @@
+{
+  "source_agent": "TravelPlanner-Agent-v2",
+  "task": "passport_validity_check",
+  "document": "PASSPORT - Holder: Alex Morgan. Passport No: U12345678. Expiry Date: 2026-11-05. Planned travel: 2026-10-20, destination Schengen area (6-month validity rule)."
+}
