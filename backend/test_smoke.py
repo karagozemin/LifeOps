@@ -14,7 +14,7 @@ CASES = {
     "license": "Driver's License. Expiry Date: March 14, 2027.",
     "warranty": "Headphone warranty ends in 39 days. Device value 120 USD.",
     "subscription": "StreamPlus trial converts to a 19.99 USD monthly plan in 3 days.",
-    "bill": "Electricity bill due 07/22/2026, amount 45.00 USD, 5% late fee.",
+    "bill": "Electricity bill due 07/29/2026, amount 45.00 USD, 5% late fee.",
     "passport": "Passport expiry 2026-11-05, Schengen travel 2026-10-20.",
 }
 

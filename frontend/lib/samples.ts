@@ -3,7 +3,7 @@ import type { Sample } from "./types";
 export const SAMPLES: Sample[] = [
   {
     id: "passport",
-    label: "🛂 Passport (agent call)",
+    label: "Passport / agent",
     caller: "TravelPlanner-Agent-v2",
     service: "full_action_pack",
     text:
@@ -11,7 +11,7 @@ export const SAMPLES: Sample[] = [
   },
   {
     id: "warranty",
-    label: "🎧 Warranty (39 days left)",
+    label: "Warranty",
     caller: "human",
     service: "full_action_pack",
     text:
@@ -19,7 +19,7 @@ export const SAMPLES: Sample[] = [
   },
   {
     id: "subscription",
-    label: "💳 Free trial auto-renew",
+    label: "Free trial",
     caller: "human",
     service: "full_action_pack",
     text:
@@ -27,15 +27,15 @@ export const SAMPLES: Sample[] = [
   },
   {
     id: "bill",
-    label: "⚡ Electricity bill",
+    label: "Electricity bill",
     caller: "human",
     service: "full_action_pack",
     text:
-      "ELECTRICITY BILL. Amount Due: 45.00 USD. Payment Due Date: 07/22/2026. A 5% late fee applies and service may be interrupted.",
+      "ELECTRICITY BILL. Amount Due: 45.00 USD. Payment Due Date: 07/29/2026. A 5% late fee applies and service may be interrupted.",
   },
   {
     id: "license",
-    label: "🚗 Driver's license",
+    label: "Driver's license",
     caller: "human",
     service: "full_action_pack",
     text:
@@ -43,7 +43,7 @@ export const SAMPLES: Sample[] = [
   },
   {
     id: "multi",
-    label: "📚 Multi-audit (3 docs)",
+    label: "Multi-audit",
     caller: "LifeAdmin-Agent-v1",
     service: "multi_audit",
     text: [
@@ -51,7 +51,7 @@ export const SAMPLES: Sample[] = [
       "---",
       "Hi! Your StreamPlus free trial ends in 3 days. It will then convert to the paid plan at 19.99 USD per month unless you cancel in account settings.",
       "---",
-      "ELECTRICITY BILL. Amount Due: 45.00 USD. Payment Due Date: 07/22/2026. A 5% late fee applies and service may be interrupted.",
+      "ELECTRICITY BILL. Amount Due: 45.00 USD. Payment Due Date: 07/29/2026. A 5% late fee applies and service may be interrupted.",
     ].join("\n"),
   },
 ];

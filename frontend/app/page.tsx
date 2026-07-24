@@ -1,17 +1,26 @@
 "use client";
 
 import { useState } from "react";
+import {
+  Activity,
+  Bot,
+  FileSearch,
+  Layers3,
+  ScanText,
+  ShieldCheck,
+  UserRound,
+} from "lucide-react";
 import { SAMPLES } from "@/lib/samples";
-import { scanWithX402, type StepEvent } from "@/lib/api";
+import { scanPreview, type StepEvent } from "@/lib/api";
 import type { LifeOpsResult, Service } from "@/lib/types";
 import TxTerminal from "@/components/TxTerminal";
 import ResultView from "@/components/ResultView";
 
-const PRICE: Record<Service, number> = {
-  scan: 0.01,
-  full_action_pack: 0.05,
-  multi_audit: 0.2,
-};
+const SERVICES: Array<{ id: Service; label: string; price: string }> = [
+  { id: "scan", label: "Scan", price: "0.01" },
+  { id: "full_action_pack", label: "Action pack", price: "0.05" },
+  { id: "multi_audit", label: "Multi-audit", price: "0.20" },
+];
 
 export default function Home() {
   const [text, setText] = useState("");
@@ -24,12 +33,13 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
 
   function loadSample(id: string) {
-    const s = SAMPLES.find((x) => x.id === id);
-    if (!s) return;
-    setText(s.text);
-    setCaller(s.caller);
-    setService(s.service);
+    const sample = SAMPLES.find((item) => item.id === id);
+    if (!sample) return;
+    setText(sample.text);
+    setCaller(sample.caller);
+    setService(sample.service);
     setResult(null);
+    setIcsUrl(null);
     setError(null);
     setLog([]);
   }
@@ -39,99 +49,116 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setIcsUrl(null);
     setLog([]);
-
-    const push = (e: StepEvent) => setLog((prev) => [...prev, e]);
+    const push = (event: StepEvent) => setLog((previous) => [...previous, event]);
 
     try {
-      const data = await scanWithX402(text, service, caller, push);
+      const data = await scanPreview(text, service, caller, push);
       setResult(data.result);
       setIcsUrl(data.ics_url);
-    } catch (err) {
-      setError(
-        "Could not reach the backend. Is it running on http://localhost:8000 ?"
-      );
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Request failed";
+      setError(message);
+      push({ kind: "error", text: message });
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl px-6 py-8">
-      {/* header */}
-      <header className="mb-8">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/15 text-xl">
-            🛡️
+    <main className="min-h-screen">
+      <header className="border-b border-edge bg-ink/95">
+        <div className="mx-auto flex max-w-[1480px] items-center gap-4 px-4 py-4 sm:px-6">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-accent/40 bg-accent/10 text-accent">
+            <ShieldCheck size={20} aria-hidden="true" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">LifeOps</h1>
-            <p className="text-sm text-gray-400">
-              Paste your document, save your money.
-            </p>
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold text-white">LifeOps</h1>
+            <p className="truncate text-xs text-muted">Personal deadline intelligence</p>
           </div>
-          <div className="ml-auto flex items-center gap-2 text-xs">
-            <span className="rounded-full border border-edge bg-panel px-3 py-1 font-mono text-gray-400">
-              A2MCP · X Layer · USDT0
-            </span>
-            <span className="rounded-full border border-ok/40 bg-ok/10 px-3 py-1 font-mono text-ok">
-              guaranteed JSON + .ics
-            </span>
+          <div className="ml-auto hidden items-center gap-5 text-xs sm:flex">
+            <Status icon={Activity} label="API ready" tone="green" />
+            <Status icon={Layers3} label="X Layer" />
+            <span className="font-mono text-muted">x402 v2 · USDT0</span>
           </div>
         </div>
       </header>
 
-      {/* split screen */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* LEFT: input + result */}
-        <section className="space-y-4">
-          <div className="rounded-xl border border-edge bg-panel p-4">
-            <div className="mb-3 flex flex-wrap gap-2">
-              {SAMPLES.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => loadSample(s.id)}
-                  className="rounded-lg border border-edge bg-black/30 px-3 py-1.5 text-sm text-gray-300 transition hover:border-accent/50 hover:text-white"
+      <div className="mx-auto grid max-w-[1480px] gap-5 px-4 py-5 sm:px-6 xl:grid-cols-[minmax(0,1.12fr)_minmax(380px,.88fr)]">
+        <section className="min-w-0 space-y-5" aria-label="Document analysis">
+          <div className="rounded-lg border border-edge bg-panel">
+            <div className="flex flex-col gap-3 border-b border-edge p-4 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-2 text-sm font-medium text-white">
+                <FileSearch size={17} className="text-accent" aria-hidden="true" />
+                Document input
+              </div>
+              <label className="sm:ml-auto">
+                <span className="sr-only">Load sample</span>
+                <select
+                  defaultValue=""
+                  onChange={(event) => loadSample(event.target.value)}
+                  className="h-9 w-full rounded-md border border-edge bg-surface px-3 text-sm text-gray-200 outline-none focus:border-accent sm:w-52"
                 >
-                  {s.label}
-                </button>
-              ))}
+                  <option value="" disabled>Load a sample</option>
+                  {SAMPLES.map((sample) => (
+                    <option key={sample.id} value={sample.id}>{sample.label}</option>
+                  ))}
+                </select>
+              </label>
             </div>
 
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Paste any life document: a passport, warranty, bill, subscription email…"
-              className="h-40 w-full resize-none rounded-lg border border-edge bg-black/40 p-3 font-mono text-sm text-gray-200 outline-none focus:border-accent/60"
-            />
+            <div className="p-4">
+              <textarea
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                placeholder="Paste a passport, warranty, subscription notice, bill, or appointment text"
+                maxLength={50000}
+                className="h-48 w-full resize-y rounded-md border border-edge bg-surface p-3 font-mono text-sm leading-6 text-gray-100 outline-none placeholder:text-gray-600 focus:border-accent"
+              />
 
-            <div className="mt-3 flex items-center gap-3">
-              <span className="font-mono text-xs text-gray-500">
-                caller: {caller}
-              </span>
-              <select
-                value={service}
-                onChange={(e) => setService(e.target.value as Service)}
-                className="rounded-lg border border-edge bg-black/40 px-2 py-1.5 font-mono text-xs text-gray-300 outline-none focus:border-accent/60"
-              >
-                <option value="scan">scan · 0.01</option>
-                <option value="full_action_pack">full_action_pack · 0.05</option>
-                <option value="multi_audit">multi_audit · 0.20</option>
-              </select>
-              <button
-                onClick={runScan}
-                disabled={loading || !text.trim()}
-                className="ml-auto rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {loading
-                  ? "Processing…"
-                  : `Scan & Settle (${PRICE[service].toFixed(2)} USDT0)`}
-              </button>
+              <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center">
+                <div className="grid grid-cols-3 rounded-md border border-edge bg-surface p-1" role="group" aria-label="Service level">
+                  {SERVICES.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setService(item.id)}
+                      aria-pressed={service === item.id}
+                      className={`min-h-11 px-3 py-1 text-left text-xs transition ${
+                        service === item.id
+                          ? "rounded bg-white text-black"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      <span className="block font-medium">{item.label}</span>
+                      <span className="block font-mono opacity-70">{item.price} USDT0</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex min-w-0 items-center gap-2 text-xs text-muted">
+                  {caller.toLowerCase().includes("agent") ? <Bot size={15} /> : <UserRound size={15} />}
+                  <span className="truncate font-mono">{caller}</span>
+                  <span className="text-gray-700">/</span>
+                  <span className="font-mono">{text.length.toLocaleString()} chars</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={runScan}
+                  disabled={loading || !text.trim()}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-accent px-5 text-sm font-semibold text-black transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-40 lg:ml-auto"
+                >
+                  <ScanText size={17} aria-hidden="true" />
+                  {loading ? "Analyzing" : "Run preview"}
+                </button>
+              </div>
             </div>
           </div>
 
           {error && (
-            <div className="rounded-xl border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
+            <div role="alert" className="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm text-red-200">
               {error}
             </div>
           )}
@@ -139,18 +166,33 @@ export default function Home() {
           {result ? (
             <ResultView result={result} icsUrl={icsUrl} />
           ) : (
-            <div className="rounded-xl border border-dashed border-edge p-10 text-center text-sm text-gray-600">
-              The guaranteed JSON result — deadline, money at risk, action steps
-              and a downloadable .ics — appears here.
+            <div className="flex min-h-44 items-center justify-center rounded-lg border border-dashed border-edge text-sm text-muted">
+              No analysis yet
             </div>
           )}
         </section>
 
-        {/* RIGHT: live tx terminal */}
-        <section className="lg:sticky lg:top-8 lg:h-[calc(100vh-8rem)]">
+        <aside className="min-w-0 xl:sticky xl:top-5 xl:h-[calc(100vh-2.5rem)]" aria-label="x402 activity">
           <TxTerminal log={log} />
-        </section>
+        </aside>
       </div>
     </main>
+  );
+}
+
+function Status({
+  icon: Icon,
+  label,
+  tone = "neutral",
+}: {
+  icon: typeof Activity;
+  label: string;
+  tone?: "green" | "neutral";
+}) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 ${tone === "green" ? "text-ok" : "text-gray-300"}`}>
+      <Icon size={14} aria-hidden="true" />
+      {label}
+    </span>
   );
 }

@@ -5,19 +5,36 @@ Emits a VEVENT for every obligation and reminder, returns base64.
 from __future__ import annotations
 
 import base64
+import hashlib
 from datetime import datetime, timezone
 
 
 def _fold(line: str) -> str:
     """RFC5545 75-octet line folding."""
-    if len(line) <= 75:
-        return line
-    out, chunk = [], line
-    while len(chunk) > 75:
-        out.append(chunk[:75])
-        chunk = " " + chunk[75:]
-    out.append(chunk)
-    return "\r\n".join(out)
+    output: list[str] = []
+    current = ""
+    prefix = ""
+    for char in line:
+        if len((prefix + current + char).encode("utf-8")) > 75 and current:
+            output.append(prefix + current)
+            current = char
+            prefix = " "
+        else:
+            current += char
+    output.append(prefix + current)
+    return "\r\n".join(output)
+
+
+def _escape(value: object) -> str:
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace("\r\n", "\\n")
+        .replace("\n", "\\n")
+        .replace("\r", "\\n")
+        .replace(";", "\\;")
+        .replace(",", "\\,")
+    )
 
 
 def _dt(date_iso: str) -> str:
@@ -38,18 +55,19 @@ def build_ics(obligations: list[dict], reminders: list[str], title_prefix: str =
 
     for i, ob in enumerate(obligations):
         due = _dt(ob["due_date"])
-        uid = f"lifeops-ob-{i}-{now}@lifeops"
+        uid_seed = f"{ob['title']}:{ob['due_date']}:{i}".encode("utf-8")
+        uid = f"lifeops-ob-{hashlib.sha256(uid_seed).hexdigest()[:20]}@lifeops"
         lines += [
             "BEGIN:VEVENT",
             _fold(f"UID:{uid}"),
             f"DTSTAMP:{now}",
             f"DTSTART;VALUE=DATE:{due}",
-            _fold(f"SUMMARY:{ob['title']} (deadline)"),
-            _fold(f"DESCRIPTION:{ob['risk_if_missed']} | At risk: ${ob['money_at_risk_usd']}"),
+            _fold(f"SUMMARY:{_escape(ob['title'])} (deadline)"),
+            _fold(f"DESCRIPTION:{_escape(ob['risk_if_missed'])} | At risk: ${ob['money_at_risk_usd']}"),
             "BEGIN:VALARM",
             "TRIGGER:-P7D",
             "ACTION:DISPLAY",
-            _fold(f"DESCRIPTION:{ob['title']} - 7 days left"),
+            _fold(f"DESCRIPTION:{_escape(ob['title'])} - 7 days left"),
             "END:VALARM",
             "END:VEVENT",
         ]
@@ -61,10 +79,10 @@ def build_ics(obligations: list[dict], reminders: list[str], title_prefix: str =
             _fold(f"UID:{uid}"),
             f"DTSTAMP:{now}",
             f"DTSTART;VALUE=DATE:{_dt(rem)}",
-            _fold(f"SUMMARY:{title_prefix} reminder"),
+            _fold(f"SUMMARY:{_escape(title_prefix)} reminder"),
             "END:VEVENT",
         ]
 
     lines.append("END:VCALENDAR")
-    raw = "\r\n".join(lines).encode("utf-8")
+    raw = ("\r\n".join(lines) + "\r\n").encode("utf-8")
     return base64.b64encode(raw).decode("ascii")

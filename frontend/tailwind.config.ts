@@ -8,13 +8,16 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#0a0a0f",
-        panel: "#12121a",
-        edge: "#22222e",
-        accent: "#6366f1",
-        danger: "#ef4444",
-        warn: "#f59e0b",
-        ok: "#10b981",
+        ink: "#090b0b",
+        panel: "#111414",
+        surface: "#171b1b",
+        edge: "#2b3030",
+        muted: "#8b9494",
+        accent: "#b8f34a",
+        "accent-strong": "#cbff68",
+        danger: "#ff5b5b",
+        warn: "#f7b955",
+        ok: "#52d99a",
       },
       fontFamily: {
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],

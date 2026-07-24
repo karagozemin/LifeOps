@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from calendar import monthrange
 from datetime import date, datetime, timedelta
 
 from .money import RISK_TABLE, estimate_risk
@@ -225,6 +226,11 @@ def _amount(text: str) -> float | None:
     return max(v for v, _ in found)
 
 
+def _late_fee_percent(text: str) -> float | None:
+    match = re.search(r"(\d+(?:[.,]\d+)?)\s*%\s*(?:late\s*)?fee", text, re.IGNORECASE)
+    return _to_float(match.group(1)) if match else None
+
+
 def _to_float(raw: str) -> float | None:
     s = raw.strip()
     # 1,234.56 -> 1234.56 ; 1.234,56 -> 1234.56 ; 19,99 -> 19.99
@@ -276,6 +282,24 @@ def _travel_date(text: str) -> str | None:
     return None
 
 
+def _source_quote(text: str, cues: list[str]) -> str | None:
+    """Return a compact source sentence containing one of the supplied cues."""
+    chunks = re.split(r"(?<=[.!?])\s+|\n+", text)
+    for chunk in chunks:
+        clean = " ".join(chunk.strip().split())
+        lowered = clean.lower()
+        if clean and any(cue.lower() in lowered for cue in cues):
+            return clean[:240]
+    return None
+
+
+def _add_months(value: date, months: int) -> date:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    return date(year, month, min(value.day, monthrange(year, month)[1]))
+
+
 # ---- deterministic fallback --------------------------------------------
 
 _STEPS = {
@@ -297,7 +321,9 @@ _TITLES = {
 }
 
 
-def _passport_validity_obligation(text: str, expiry_iso: str) -> dict | None:
+def _passport_validity_obligation(
+    text: str, expiry_iso: str, money_risk: dict
+) -> dict | None:
     """
     Passport/visa 6-month validity rule.
     Many destinations require the passport to stay valid for 6 months AFTER
@@ -313,8 +339,7 @@ def _passport_validity_obligation(text: str, expiry_iso: str) -> dict | None:
     except ValueError:
         return None
 
-    # 6 months after travel (approximate as 182 days)
-    required_valid_until = tdate + timedelta(days=182)
+    required_valid_until = _add_months(tdate, 6)
     if expiry >= required_valid_until:
         return None  # passport is fine for the trip
 
@@ -329,23 +354,62 @@ def _passport_validity_obligation(text: str, expiry_iso: str) -> dict | None:
             "Entry denied at the border: the destination requires the passport "
             "to be valid for 6 months beyond the travel date. Renew before the trip."
         ),
-        "money_at_risk_usd": RISK_TABLE["passport"]["base"] + 200.0,
+        "money_at_risk_usd": money_risk["money_at_risk_usd"],
         "days_remaining": days_remaining,
         "steps": [
             "Check the destination's passport validity requirement",
             "Book an expedited passport renewal appointment",
             "Renew before the travel date",
         ],
+        "risk_basis": money_risk["risk_basis"],
+        "money_at_risk_is_estimate": money_risk["money_at_risk_is_estimate"],
     }
 
 
 def _fallback_extract(text: str) -> dict:
     dtype = _detect_type(text)
-    due = _pick_deadline(text) or (
-        date.today() + timedelta(days=RISK_TABLE[dtype]["lead_days"] + 30)
-    ).isoformat()
+    due = _pick_deadline(text)
     amount = _amount(text)
-    risk = estimate_risk(dtype, amount)
+    risk = estimate_risk(dtype, amount, _late_fee_percent(text))
+
+    evidence = []
+    type_quote = _source_quote(text, [dtype.replace("drivers_license", "license"), "trial", "invoice"])
+    if dtype != "unknown" and type_quote:
+        evidence.append({"field": "document_type", "value": dtype, "source_text": type_quote})
+    due_quote = _source_quote(text, _DEADLINE_CUES + ["days"])
+    if due and due_quote:
+        evidence.append({"field": "deadline", "value": due, "source_text": due_quote})
+    amount_quote = _source_quote(text, ["usd", "$", "dollars"])
+    if amount is not None and amount_quote:
+        evidence.append({"field": "amount_usd", "value": f"{amount:.2f}", "source_text": amount_quote})
+
+    signal_count = sum([dtype != "unknown", due is not None, amount is not None])
+    confidence = min(0.95, 0.2 + signal_count * 0.22 + min(len(evidence), 3) * 0.03)
+    warnings = []
+    if due is None:
+        warnings.append("deadline_not_found")
+    if risk["money_at_risk_is_estimate"] and risk["money_at_risk_usd"]:
+        warnings.append("money_at_risk_is_estimate")
+    if confidence < 0.6:
+        warnings.append("low_confidence")
+
+    if due is None:
+        return {
+            "document_type": dtype,
+            "entities": {
+                "expiry_date": None,
+                "holder": _holder(text),
+                "provider": _provider(text),
+                "amount_usd": amount,
+                "reference": _reference(text),
+            },
+            "obligations": [],
+            "reminders": [],
+            "confidence": round(confidence, 2),
+            "evidence": evidence,
+            "warnings": warnings,
+            "extraction_mode": "deterministic",
+        }
 
     due_d = datetime.strptime(due, "%Y-%m-%d").date()
     start_by = (due_d - timedelta(days=risk["lead_days"])).isoformat()
@@ -359,14 +423,19 @@ def _fallback_extract(text: str) -> dict:
         "money_at_risk_usd": risk["money_at_risk_usd"],
         "days_remaining": days_remaining,
         "steps": _STEPS[dtype],
+        "risk_basis": risk["risk_basis"],
+        "money_at_risk_is_estimate": risk["money_at_risk_is_estimate"],
     }
 
     obligations = [primary]
 
     # Passport/visa 6-month validity rule -> may add an earlier, sharper deadline.
     if dtype in ("passport", "visa"):
-        extra = _passport_validity_obligation(text, due)
+        extra = _passport_validity_obligation(text, due, risk)
         if extra:
+            primary["money_at_risk_usd"] = 0.0
+            primary["risk_basis"] = "Financial exposure counted once in the travel-validity obligation"
+            primary["money_at_risk_is_estimate"] = risk["money_at_risk_is_estimate"]
             obligations.insert(0, extra)
 
     # 3 reminders anchored on the *primary* deadline.
@@ -385,7 +454,10 @@ def _fallback_extract(text: str) -> dict:
         },
         "obligations": obligations,
         "reminders": [r1, r2, r3],
-        "confidence": 0.82 if dtype != "unknown" else 0.5,
+        "confidence": round(confidence, 2),
+        "evidence": evidence,
+        "warnings": warnings + (["deadline_overdue"] if days_remaining < 0 else []),
+        "extraction_mode": "deterministic",
     }
 
 
@@ -407,16 +479,76 @@ def _llm_extract(text: str) -> dict | None:
             "money_at_risk_usd,days_remaining,steps[]}], reminders[], confidence(0-1). "
             "Dates in ISO. Choose the DEADLINE date, never an issue/start date. "
             "For passports/visas, apply the destination 6-month validity rule when a "
-            "travel date is present. Personal-life scope only; corporate/technical = unknown."
+            "travel date is present. Personal-life scope only; corporate/technical = unknown. "
+            "Evidence source_text must be an exact quote from the user's input. Do not invent dates, "
+            "amounts, consequences, or evidence. Return no obligations when no deadline exists."
         )
+        extraction_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["document_type", "entities", "obligations", "reminders", "confidence", "evidence", "warnings"],
+            "properties": {
+                "document_type": {"type": "string", "enum": ["drivers_license", "passport", "visa", "warranty", "subscription", "bill", "appointment", "unknown"]},
+                "entities": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["expiry_date", "holder", "provider", "amount_usd", "reference"],
+                    "properties": {
+                        "expiry_date": {"type": ["string", "null"]},
+                        "holder": {"type": ["string", "null"]},
+                        "provider": {"type": ["string", "null"]},
+                        "amount_usd": {"type": ["number", "null"]},
+                        "reference": {"type": ["string", "null"]},
+                    },
+                },
+                "obligations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object", "additionalProperties": False,
+                        "required": ["title", "due_date", "start_action_by", "risk_if_missed", "days_remaining", "steps"],
+                        "properties": {
+                            "title": {"type": "string"},
+                            "due_date": {"type": "string"},
+                            "start_action_by": {"type": "string"},
+                            "risk_if_missed": {"type": "string"},
+                            "days_remaining": {"type": "integer"},
+                            "steps": {"type": "array", "items": {"type": "string"}},
+                        },
+                    },
+                },
+                "reminders": {"type": "array", "items": {"type": "string"}},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "evidence": {
+                    "type": "array",
+                    "items": {
+                        "type": "object", "additionalProperties": False,
+                        "required": ["field", "value", "source_text"],
+                        "properties": {
+                            "field": {"type": "string"},
+                            "value": {"type": "string"},
+                            "source_text": {"type": "string"},
+                        },
+                    },
+                },
+                "warnings": {"type": "array", "items": {"type": "string"}},
+            },
+        }
         resp = client.chat.completions.create(
             model=os.getenv("LIFEOPS_MODEL", "gpt-4o-mini"),
-            response_format={"type": "json_object"},
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "lifeops_extraction",
+                    "strict": True,
+                    "schema": extraction_schema,
+                },
+            },
             messages=[{"role": "system", "content": sys},
                       {"role": "user", "content": text}],
             temperature=0,
         )
-        return json.loads(resp.choices[0].message.content)
+        result = json.loads(resp.choices[0].message.content)
+        result["extraction_mode"] = "llm"
+        return result
     except Exception:
         # If the LLM fails, silently fall back - the demo never breaks
         return None

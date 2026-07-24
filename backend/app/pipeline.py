@@ -16,6 +16,11 @@ from .ics import build_ics
 from .money import estimate_risk
 from .schema import LifeOpsResult
 
+_SUPPORTED_TYPES = {
+    "drivers_license", "passport", "visa", "warranty", "subscription",
+    "bill", "appointment", "unknown",
+}
+
 
 def _safe_days_remaining(due: str) -> int:
     try:
@@ -25,45 +30,96 @@ def _safe_days_remaining(due: str) -> int:
         return 0
 
 
-def _normalize(raw: dict) -> dict:
+def _parse_iso(value: object) -> date | None:
+    try:
+        return date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize(raw: dict, source_text: str = "") -> dict:
     """Force LLM or fallback output into the guaranteed schema + fill gaps."""
-    dtype = raw.get("document_type", "unknown")
+    dtype = str(raw.get("document_type", "unknown"))
+    if dtype not in _SUPPORTED_TYPES:
+        dtype = "unknown"
     entities = raw.get("entities", {}) or {}
     amount = entities.get("amount_usd")
 
     obligations = raw.get("obligations") or []
+    if not isinstance(obligations, list):
+        obligations = []
     fixed_obs = []
     total_risk = 0.0
+    raw_warnings = raw.get("warnings") or []
+    warnings = list(dict.fromkeys(raw_warnings if isinstance(raw_warnings, list) else []))
 
     for ob in obligations:
-        due = ob.get("due_date") or entities.get("expiry_date") or date.today().isoformat()
+        if not isinstance(ob, dict):
+            continue
+        due = ob.get("due_date") or entities.get("expiry_date")
+        due_date = _parse_iso(due)
+        if due_date is None:
+            if "invalid_deadline" not in warnings:
+                warnings.append("invalid_deadline")
+            continue
+        due = due_date.isoformat()
         risk = estimate_risk(dtype, amount)
 
-        money = ob.get("money_at_risk_usd")
-        if money is None:
+        # LLM output never determines money. A value is accepted only together
+        # with the deterministic risk basis produced by our rule engine.
+        money = ob.get("money_at_risk_usd") if ob.get("risk_basis") else None
+        try:
+            money = max(0.0, float(money)) if money is not None else risk["money_at_risk_usd"]
+        except (TypeError, ValueError):
             money = risk["money_at_risk_usd"]
 
-        start_by = ob.get("start_action_by")
-        if not start_by:
-            try:
-                dd = datetime.strptime(due, "%Y-%m-%d").date()
-                start_by = (dd - timedelta(days=risk["lead_days"])).isoformat()
-            except Exception:
-                start_by = due
+        start_by_date = _parse_iso(ob.get("start_action_by"))
+        if start_by_date is None:
+            start_by_date = due_date - timedelta(days=risk["lead_days"])
+        days_remaining = (due_date - date.today()).days
+        status = "overdue" if days_remaining < 0 else "due_soon" if days_remaining <= 14 else "upcoming"
 
         fixed = {
             "title": ob.get("title") or "Deadline",
             "due_date": due,
-            "start_action_by": start_by,
+            "start_action_by": start_by_date.isoformat(),
             "risk_if_missed": ob.get("risk_if_missed") or risk["risk_if_missed"],
-            "money_at_risk_usd": float(money),
-            "days_remaining": ob.get("days_remaining") if ob.get("days_remaining") is not None else _safe_days_remaining(due),
+            "money_at_risk_usd": money,
+            "days_remaining": days_remaining,
             "steps": ob.get("steps") or [],
+            "status": status,
+            "risk_basis": ob.get("risk_basis") or risk["risk_basis"],
+            "money_at_risk_is_estimate": ob.get(
+                "money_at_risk_is_estimate", risk["money_at_risk_is_estimate"]
+            ),
         }
         total_risk += fixed["money_at_risk_usd"]
         fixed_obs.append(fixed)
 
-    reminders = raw.get("reminders") or []
+    reminders = sorted({
+        parsed.isoformat()
+        for value in (raw.get("reminders") or [])
+        if (parsed := _parse_iso(value)) is not None and parsed >= date.today()
+    })
+
+    evidence = []
+    normalized_source = " ".join(source_text.split())
+    for item in raw.get("evidence") or []:
+        if not isinstance(item, dict):
+            continue
+        quote = " ".join(str(item.get("source_text", "")).split())
+        if not quote or (normalized_source and quote not in normalized_source):
+            continue
+        evidence.append({
+            "field": str(item.get("field", "unknown")),
+            "value": str(item.get("value", "")),
+            "source_text": quote,
+        })
+
+    try:
+        confidence = float(raw.get("confidence", 0.5))
+    except (TypeError, ValueError):
+        confidence = 0.5
 
     return {
         "document_type": dtype,
@@ -77,14 +133,19 @@ def _normalize(raw: dict) -> dict:
         "obligations": fixed_obs,
         "reminders": reminders,
         "total_money_at_risk_usd": round(total_risk, 2),
-        "confidence": float(raw.get("confidence", 0.7)),
+        "confidence": min(1.0, max(0.0, confidence)),
+        "evidence": evidence,
+        "warnings": warnings,
+        "extraction_mode": raw.get("extraction_mode", "deterministic")
+        if raw.get("extraction_mode") in {"deterministic", "llm"}
+        else "deterministic",
     }
 
 
 def process(text: str, with_ics: bool = True) -> dict:
     """Full run: text -> guaranteed LifeOpsResult dict."""
     raw = extract(text)
-    norm = _normalize(raw)
+    norm = _normalize(raw, text)
 
     if with_ics and norm["obligations"]:
         norm["ics_base64"] = build_ics(norm["obligations"], norm["reminders"])
@@ -152,10 +213,13 @@ def process_multi(text: str) -> dict:
     all_rems: list[str] = []
     confidences: list[float] = []
     doc_types: list[str] = []
+    all_evidence: list[dict] = []
+    all_warnings: list[str] = []
+    extraction_modes: list[str] = []
 
     for doc in docs:
         raw = extract(doc)
-        norm = _normalize(raw)
+        norm = _normalize(raw, doc)
         # Tag each obligation with its source document type for clarity.
         dtype = norm["document_type"]
         for ob in norm["obligations"]:
@@ -164,6 +228,9 @@ def process_multi(text: str) -> dict:
         all_rems.extend(norm["reminders"])
         confidences.append(norm["confidence"])
         doc_types.append(dtype)
+        all_evidence.extend(norm["evidence"])
+        all_warnings.extend(norm["warnings"])
+        extraction_modes.append(norm["extraction_mode"])
 
     # Most urgent first - this is the audit's headline ordering.
     all_obs.sort(key=lambda o: o["days_remaining"])
@@ -186,6 +253,13 @@ def process_multi(text: str) -> dict:
         "total_money_at_risk_usd": total,
         "confidence": round(min(confidences), 2) if confidences else 0.5,
         "documents_scanned": len(docs),
+        "evidence": all_evidence,
+        "warnings": list(dict.fromkeys(all_warnings)),
+        "extraction_mode": (
+            "hybrid" if len(set(extraction_modes)) > 1
+            else extraction_modes[0] if extraction_modes
+            else "deterministic"
+        ),
         "ics_base64": build_ics(all_obs, all_rems) if all_obs else "",
     }
 

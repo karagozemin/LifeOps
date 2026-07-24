@@ -1,4 +1,9 @@
-import type { ScanResponse, Payment402, PaymentTx, Service } from "./types";
+import type {
+  PaymentRequired,
+  PaymentTx,
+  PreviewResponse,
+  Service,
+} from "./types";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
@@ -8,72 +13,68 @@ export interface StepEvent {
   text: string;
 }
 
-/**
- * Runs the full x402 flow against the backend:
- *   1. Unpaid POST /scan   -> expect HTTP 402 + price headers
- *   2. Paid POST /scan     -> settle + guaranteed JSON result
- * Emits log events via onStep so the UI terminal can narrate it live.
- */
-export async function scanWithX402(
+function decodeChallenge(header: string | null): PaymentRequired | null {
+  if (!header) return null;
+  try {
+    const bytes = Uint8Array.from(atob(header), (char) => char.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes)) as PaymentRequired;
+  } catch {
+    return null;
+  }
+}
+
+export async function scanPreview(
   text: string,
   service: Service,
   caller: string,
-  onStep: (e: StepEvent) => void
-): Promise<ScanResponse> {
+  onStep: (event: StepEvent) => void
+): Promise<PreviewResponse> {
   const body = JSON.stringify({ text, service, caller });
+  onStep({ kind: "info", text: `${caller} -> POST /scan` });
 
-  // --- 1) unpaid call -> 402 -------------------------------------------------
-  onStep({ kind: "info", text: `${caller} → POST /scan (no payment)` });
-  const res402 = await fetch(`${API_BASE}/scan`, {
+  const challengeResponse = await fetch(`${API_BASE}/scan`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body,
   });
-
-  if (res402.status === 402) {
-    const info = (await res402.json()) as Payment402;
-    const req = info.payment_requirements;
-    const human = req ? Number(req.amount) / 1e6 : null;
-    onStep({
-      kind: "http",
-      text: `← HTTP 402 + PAYMENT-REQUIRED · ${human ?? "?"} USDT0 on X Layer (${req?.network ?? "eip155:196"})`,
-    });
-    onStep({ kind: "info", text: info.message });
-  } else {
-    onStep({
-      kind: "error",
-      text: `Expected 402, got HTTP ${res402.status}`,
-    });
+  if (challengeResponse.status !== 402) {
+    throw new Error(`Expected x402 challenge, received HTTP ${challengeResponse.status}`);
   }
 
-  // --- 2) paid call ----------------------------------------------------------
-  onStep({ kind: "info", text: "Settling payment via A2MCP (X Layer / USDT0)…" });
-  const resPaid = await fetch(`${API_BASE}/scan`, {
+  const challenge = decodeChallenge(challengeResponse.headers.get("PAYMENT-REQUIRED"));
+  const accepted = challenge?.accepts[0];
+  onStep({
+    kind: "http",
+    text: `HTTP 402 · ${accepted ? Number(accepted.amount) / 1e6 : "?"} USDT0 · ${accepted?.network ?? "unknown"}`,
+  });
+  onStep({ kind: "info", text: "PAYMENT-REQUIRED verified · x402 v2" });
+  onStep({ kind: "info", text: "Opening rate-limited web preview" });
+
+  const previewResponse = await fetch(`${API_BASE}/preview`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Payment": "demo" },
+    headers: { "Content-Type": "application/json" },
     body,
   });
-
-  if (!resPaid.ok) {
-    onStep({ kind: "error", text: `Scan failed: HTTP ${resPaid.status}` });
-    throw new Error(`scan failed: ${resPaid.status}`);
+  if (!previewResponse.ok) {
+    const detail = await previewResponse.text();
+    throw new Error(`Preview failed: HTTP ${previewResponse.status} ${detail}`);
   }
 
-  const data = (await resPaid.json()) as ScanResponse;
-  const tx: PaymentTx = data.payment;
-  onStep({
-    kind: "tx",
-    text: `settled ${tx.amount} ${tx.asset} on ${tx.network} · ${tx.tx_hash}`,
-  });
+  const data = (await previewResponse.json()) as PreviewResponse;
   onStep({
     kind: "ok",
-    text: `← HTTP 200 · guaranteed JSON · confidence ${data.result.confidence}`,
+    text: `HTTP 200 · ${data.result.obligations.length} obligations · ${(data.result.confidence * 100).toFixed(0)}% confidence`,
   });
-
   return data;
 }
 
+export async function recentTransactions(): Promise<PaymentTx[]> {
+  const response = await fetch(`${API_BASE}/tx?limit=8`, { cache: "no-store" });
+  if (!response.ok) return [];
+  const data = (await response.json()) as { transactions: PaymentTx[] };
+  return data.transactions.filter((transaction) => transaction.mode === "x402");
+}
+
 export function icsDownloadUrl(icsPath?: string | null): string {
-  // Per-result URL when available (concurrency-safe), else latest.
   return `${API_BASE}${icsPath ?? "/ics/latest.ics"}`;
 }

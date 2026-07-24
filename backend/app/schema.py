@@ -5,9 +5,9 @@ The heart of the product: NO free text. Every output conforms to this schema.
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class DocumentType(str, Enum):
@@ -30,6 +30,15 @@ class Obligation(BaseModel):
     money_at_risk_usd: float = Field(..., description="Estimated money lost if missed (USD)")
     days_remaining: int = Field(..., description="Days from today until due_date")
     steps: List[str] = Field(default_factory=list, description="Step-by-step action plan")
+    status: Literal["overdue", "due_soon", "upcoming"] = "upcoming"
+    risk_basis: str = Field(default="Category benchmark", description="How money_at_risk was calculated")
+    money_at_risk_is_estimate: bool = True
+
+
+class EvidenceItem(BaseModel):
+    field: str
+    value: str
+    source_text: str
 
 
 class Entities(BaseModel):
@@ -49,9 +58,20 @@ class LifeOpsResult(BaseModel):
     ics_base64: str = ""
     confidence: float = Field(..., ge=0.0, le=1.0)
     documents_scanned: int = Field(default=1, description="Number of documents parsed (multi_audit)")
+    evidence: List[EvidenceItem] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    extraction_mode: Literal["deterministic", "llm", "hybrid"] = "deterministic"
 
 
 class ScanRequest(BaseModel):
-    text: str = Field(..., description="Document/message text or JSON payload")
+    text: str = Field(..., max_length=50_000, description="Document/message text or JSON payload")
     service: str = Field(default="full_action_pack", description="scan | full_action_pack | multi_audit")
-    caller: str = Field(default="human", description="human | agent - caller identity")
+    caller: str = Field(default="human", max_length=80, description="human | agent - caller identity")
+
+    @field_validator("text")
+    @classmethod
+    def text_must_contain_content(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Document text cannot be empty.")
+        return value

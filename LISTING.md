@@ -1,104 +1,92 @@
-# OKX.AI ASP Listing — Vekil LifeOps (copy-paste kit)
+# OKX.AI ASP Listing Kit
 
-Everything the Onchain OS registration flow will ask, ready to paste.
-Deadline: **27 July 2026, 23:59 UTC** (HackQuest). Listing must be LIVE before submission counts.
+Deadline: 27 July 2026, 23:59 UTC. The listing must be live before the HackQuest submission.
 
----
+## Readiness gate
 
-## 0) Prerequisites checklist
+- [ ] Public HTTPS API is stable.
+- [ ] `GET /health` returns `ready_for_listing: true`.
+- [ ] `LIFEOPS_DEMO_MODE=false` in production.
+- [ ] Unpaid `POST /scan` returns 402 plus a standard `PAYMENT-REQUIRED` header.
+- [ ] A funded Agentic Wallet completes one real 0.01 USDT0 call.
+- [ ] The real `PAYMENT-RESPONSE` decodes to an X Layer transaction hash.
+- [ ] The tx hash is recorded in `SUBMISSION.md`.
 
-- [ ] Backend deployed to a **public HTTPS** URL (see DEPLOY section below)
-- [ ] `LIFEOPS_PAYTO=0x...` set to YOUR X Layer wallet before starting the backend
-- [ ] `curl -i -X POST https://<domain>/scan -H "Content-Type: application/json" -d '{"text":"test"}'` returns **HTTP 402 + PAYMENT-REQUIRED header**
-- [ ] Onchain OS skills installed: `npx skills add okx/onchainos-skills --yes -g` (then open a NEW Claude Code session)
-- [ ] Logged in: `Log in to Agentic Wallet on Onchain OS with my email`
-
-## 1) Registration command (paste into Claude Code)
-
-```text
-Help me register an A2MCP ASP on OKX.AI using OKX Agent Identity from Onchain OS
-```
-
-## 2) ASP-level answers
+## ASP identity
 
 | Field | Value |
 |---|---|
-| ASP name | `Vekil LifeOps` |
-| ASP description | `Life-admin autopilot for agents and humans. Paste any life document (passport, warranty, bill, subscription email) and get back guaranteed JSON: deadline, money_at_risk_usd, step-by-step action plan and a downloadable .ics calendar file — in a single paid call.` |
-| Receiving wallet | `<YOUR X LAYER WALLET — same as LIFEOPS_PAYTO>` |
+| Name | `LifeOps` |
+| Role | `ASP` |
+| Category | `Lifestyle Companion` |
+| Description | `Personal deadline intelligence for agents and humans. LifeOps turns passports, warranties, subscriptions, bills, and appointments into guaranteed JSON with source evidence, conservative money-at-risk calculations, action steps, reminders, and downloadable calendar files.` |
 | Network | X Layer mainnet (`eip155:196`) |
-| Settlement asset | USDT0 — `0x779ded0c9e1022225f8e0630b35a9b54be713736` (6 decimals) |
+| Asset | USDT0 (`0x779ded0c9e1022225f8e0630b35a9b54be713736`, 6 decimals) |
+| Receiving wallet | `<LIFEOPS_PAYTO>` |
+| Repository | `https://github.com/karagozemin/LifeOps` |
+| Web app | `<PUBLIC_WEB_URL>` |
 
-## 3) Services (three under one ASP)
+## Services
 
-### Service 1 — Life Document Scan
-- **Description:** `Classifies a life document and extracts the critical deadline, entities and money at risk. Returns guaranteed JSON (no free text).`
-- **Endpoint:** `https://<domain>/scan`
-- **Method:** POST
-- **Price:** 0.01 USDT0 → amount `"10000"`
-- **Input parameters:**
-  - `text` (string, required) — raw document/message text
-  - `service` (string) — must be `"scan"`
-  - `caller` (string, optional) — calling agent identity
-- **Output:** `{ payment, result: { document_type, entities, obligations[], reminders[], total_money_at_risk_usd, confidence }, result_id }`
+### Life Document Scan
 
-### Service 2 — Full Action Pack
-- **Description:** `Everything in Scan plus a step-by-step action plan, reminder dates and a downloadable .ics calendar file covering the deadline.`
-- **Endpoint:** `https://<domain>/scan`
-- **Method:** POST
-- **Price:** 0.05 USDT0 → amount `"50000"`
-- **Input parameters:** same as Service 1, `service` = `"full_action_pack"`
-- **Output:** Scan output + `ics_base64` + `ics_url` (per-result `.ics` download)
+| Field | Value |
+|---|---|
+| Type | `A2MCP` |
+| Endpoint | `<PUBLIC_API_URL>/scan` |
+| Method | `POST` |
+| Fee | `0.01 USDT0` |
+| Description | `Classifies a personal-life document and returns a deadline, entities, source evidence, status, and explainable money at risk in guaranteed JSON.` |
+| Input | `text` required string; `service` = `scan`; `caller` optional string |
 
-### Service 3 — Multi-Document Life Audit
-- **Description:** `Send several documents in one payload (separated by --- lines). Returns ONE merged audit: obligations sorted by urgency, aggregated total_money_at_risk_usd and a single combined .ics covering every deadline.`
-- **Endpoint:** `https://<domain>/scan`
-- **Method:** POST
-- **Price:** 0.20 USDT0 → amount `"200000"`
-- **Input parameters:** same, `service` = `"multi_audit"`, `text` = documents joined with `\n---\n`
-- **Output:** merged audit + `documents_scanned` + combined `.ics`
+### Full Action Pack
 
-## 4) Payment behaviour (A2MCP compliance — already implemented)
+| Field | Value |
+|---|---|
+| Type | `A2MCP` |
+| Endpoint | `<PUBLIC_API_URL>/scan` |
+| Method | `POST` |
+| Fee | `0.05 USDT0` |
+| Description | `Adds action steps, future reminders, risk basis, and a TTL-bound .ics calendar to the evidence-backed document analysis.` |
+| Input | `text` required string; `service` = `full_action_pack`; `caller` optional string |
 
-- Unpaid POST → **HTTP 402** with `PAYMENT-REQUIRED: base64({scheme:"exact", network:"eip155:196", asset:"0x779d…3736", amount:"<base units>", payTo:"<wallet>"})`
-- Paid POST → HTTP 200, guaranteed JSON.
+### Multi-Document Life Audit
 
-## 5) Submit to marketplace review (paste into Claude Code)
+| Field | Value |
+|---|---|
+| Type | `A2MCP` |
+| Endpoint | `<PUBLIC_API_URL>/scan` |
+| Method | `POST` |
+| Fee | `0.20 USDT0` |
+| Description | `Audits multiple personal documents, deduplicates risk, sorts obligations by urgency, and returns one combined calendar and total money at risk.` |
+| Input | Documents joined with `\n---\n`; `service` = `multi_audit` |
+
+## Production variables
 
 ```text
-Help me list my ASP on OKX.AI using Onchain OS
+LIFEOPS_PAYTO=<X_LAYER_WALLET>
+OKX_API_KEY=<secret>
+OKX_SECRET_KEY=<secret>
+OKX_PASSPHRASE=<secret>
+LIFEOPS_REPLAY_DB=/var/data/payment-replays.sqlite3
+LIFEOPS_DEMO_MODE=false
+LIFEOPS_CORS_ORIGINS=<PUBLIC_WEB_URL>
 ```
 
-Save the returned **Agent ID / ASP ID**. Review ≈ 24h / 1 business day; result lands in the Agentic Wallet email + Claude session. If rejected → fix per feedback → resubmit.
+## Verification commands
 
-## 6) After approval — hackathon submission
-
-1. Confirm the listing is LIVE on OKX.AI.
-2. Record ≤90s demo (flow already scripted in README).
-3. Post on X with `#OKXAI`.
-4. Fill the Google Form (HackQuest Start Submit) with ASP details + X post link.
-
----
-
-## DEPLOY (fastest paths to public HTTPS)
-
-**Option A — Render/Railway/Fly (recommended, stable URL):**
-- Root: `backend/`, start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Env vars: `LIFEOPS_PAYTO=0x...` (and optionally `OPENAI_API_KEY`)
-
-**Option B — quick tunnel for review (fine for 24h review window):**
 ```bash
-cd backend && LIFEOPS_PAYTO=0x... bash run.sh
-# in another terminal:
-npx cloudflared tunnel --url http://localhost:8000
-```
-Use the printed `https://*.trycloudflare.com` URL as the endpoint.
-⚠️ Tunnel URLs die when the process stops — keep it alive through review, or prefer Option A.
+curl -i -X POST <PUBLIC_API_URL>/scan \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Warranty ends 2027-09-01. Value 120 USD.","service":"scan"}'
 
-**Verify before registering:**
-```bash
-curl -i -X POST https://<domain>/scan \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Passport expiry 2026-11-05","service":"scan"}'
-# expect: HTTP/2 402 + PAYMENT-REQUIRED header
+curl <PUBLIC_API_URL>/health
+
+LIFEOPS_API_BASE=<PUBLIC_API_URL> python backend/agent_call_demo.py
 ```
+
+Expected: the first command returns 402; health is listing-ready; the demo asks for explicit payment confirmation and then prints a real receipt and merchant result.
+
+## Review handoff
+
+After all fields are final, create one ASP identity, add all three services, explicitly finish service collection, review the confirmation card, and only then confirm the on-chain registration. Record the returned ASP ID immediately in `SUBMISSION.md`.

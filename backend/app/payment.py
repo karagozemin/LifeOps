@@ -1,123 +1,378 @@
-"""
-x402 payment gate + live tx log - OKX A2MCP compliant (X Layer).
-
-A2MCP spec (OKX.AI / Onchain OS):
-  - Paid service without payment -> HTTP 402 + PAYMENT-REQUIRED header.
-  - Header carries base64(JSON) payment requirements:
-      scheme  : "exact"
-      network : "eip155:196"      (X Layer mainnet)
-      asset   : USDT0 contract    (6 decimals)
-      amount  : base units string (0.01 USDT0 -> "10000")
-      payTo   : receiving X Layer wallet (env: LIFEOPS_PAYTO)
-
-Demo mode ('X-Payment: demo') produces a deterministic mock settlement so the
-frontend Tx Log terminal stays live and repeatable. Real settlement happens
-through OKX.AI / A2MCP rails once the ASP listing is approved.
-"""
+"""Production x402 v2 payment gateway for LifeOps on X Layer."""
 from __future__ import annotations
 
-import base64
+import asyncio
 import hashlib
-import json
 import os
+import sqlite3
 import time
-from collections import deque
+from collections import OrderedDict, deque
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Protocol
 
-# ---------------------------------------------------------------- X Layer / A2MCP
-NETWORK = "eip155:196"  # X Layer mainnet
+from x402.http import (
+    OKXAuthConfig,
+    OKXFacilitatorClient,
+    OKXFacilitatorConfig,
+)
+from x402.http.utils import (
+    decode_payment_signature_header,
+    encode_payment_required_header,
+    encode_payment_response_header,
+)
+from x402.schemas import (
+    PaymentPayload,
+    PaymentRequired,
+    PaymentRequirements,
+    ResourceInfo,
+    SettleResponse,
+)
+
+NETWORK = "eip155:196"
 NETWORK_NAME = "X Layer"
-ASSET = "0x779ded0c9e1022225f8e0630b35a9b54be713736"  # USDT0 on X Layer
+ASSET = "0x779ded0c9e1022225f8e0630b35a9b54be713736"
 ASSET_SYMBOL = "USDT0"
+ASSET_NAME = "USD₮0"
+ASSET_VERSION = "1"
 ASSET_DECIMALS = 6
-PAY_TO = os.environ.get("LIFEOPS_PAYTO", "0x0000000000000000000000000000000000000000")
-PAYTO_CONFIGURED = PAY_TO != "0x0000000000000000000000000000000000000000"
-if not PAYTO_CONFIGURED:
-    import sys
-    print(
-        "[LifeOps] WARNING: LIFEOPS_PAYTO is not set - payTo is the zero address. "
-        "Set LIFEOPS_PAYTO=0x<your X Layer wallet> before registering the ASP on OKX.AI.",
-        file=sys.stderr,
-    )
+ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
-# Service prices in USDT0 (human units)
 PRICES = {
-    "scan": 0.01,
-    "full_action_pack": 0.05,
-    "multi_audit": 0.20,
+    "scan": Decimal("0.01"),
+    "full_action_pack": Decimal("0.05"),
+    "multi_audit": Decimal("0.20"),
 }
 
-# Keep the last N tx in memory - the frontend Tx Log terminal is fed from here
-_TX_LOG: deque = deque(maxlen=50)
+_TX_LOG: deque[dict] = deque(maxlen=50)
 
 
-def price_for(service: str) -> float:
-    return PRICES.get(service, PRICES["full_action_pack"])
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def price_for(service: str) -> Decimal:
+    return PRICES[service]
 
 
 def base_units(service: str) -> str:
-    """Human price -> 6-decimal base units string. 0.01 -> '10000'."""
-    return str(int(round(price_for(service) * 10**ASSET_DECIMALS)))
+    return str(int(price_for(service) * (10**ASSET_DECIMALS)))
 
 
-def payment_requirements(service: str) -> dict:
-    """A2MCP 'exact' scheme payment requirements for this service."""
-    return {
-        "scheme": "exact",
-        "network": NETWORK,
-        "asset": ASSET,
-        "amount": base_units(service),
-        "payTo": PAY_TO,
-        "description": f"LifeOps {service} ({price_for(service)} {ASSET_SYMBOL})",
-    }
+class Facilitator(Protocol):
+    async def verify(self, payload: PaymentPayload, requirements: PaymentRequirements): ...
+    async def settle(self, payload: PaymentPayload, requirements: PaymentRequirements): ...
 
 
-def payment_required_header(service: str) -> dict:
-    """
-    Header set returned with a 402 response (A2MCP compliant).
-    PAYMENT-REQUIRED = base64(JSON requirements) per OKX x402 convention.
-    """
-    req = payment_requirements(service)
-    encoded = base64.b64encode(json.dumps(req).encode()).decode()
-    return {
-        "PAYMENT-REQUIRED": encoded,
-        # Human-readable mirrors for debugging / curl -i
-        "x402-price": base_units(service),
-        "x402-asset": ASSET,
-        "x402-network": NETWORK,
-        "x402-pay-to": PAY_TO,
-    }
+class PaymentGatewayError(Exception):
+    def __init__(self, status_code: int, code: str, message: str):
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
 
 
-def _tx_hash(service: str, caller: str) -> str:
-    seed = f"{service}:{caller}:{time.time_ns()}"
-    return "0x" + hashlib.sha256(seed.encode()).hexdigest()[:40]
+@dataclass(frozen=True)
+class VerifiedPayment:
+    payload: PaymentPayload | None
+    requirements: PaymentRequirements
+    fingerprint: str
+    payer: str | None
+    demo: bool = False
 
 
-def settle(service: str, caller: str, x_payment: str = "demo") -> dict:
-    """
-    Settle the payment and append to the live tx log.
-    'demo' -> deterministic mock settlement (clearly labeled).
-    Anything else is treated as an A2MCP payment payload reference.
-    """
-    amount = price_for(service)
-    mode = "demo-settlement" if x_payment == "demo" else "a2mcp"
-    tx = {
-        "ts": datetime.now(timezone.utc).strftime("%H:%M:%S"),
-        "service": service,
-        "caller": caller,
-        "amount": amount,
-        "asset": ASSET_SYMBOL,
-        "network": NETWORK_NAME,
-        "chain": NETWORK,
-        "tx_hash": _tx_hash(service, caller),
-        "status": "settled",
-        "mode": mode,
-        "protocol": "x402 / A2MCP",
-    }
-    _TX_LOG.appendleft(tx)
-    return tx
+class ReplayGuard:
+    """Atomic replay reservation with optional cross-process SQLite storage."""
+
+    def __init__(self, max_entries: int = 10_000, db_path: str | None = None):
+        self._lock = asyncio.Lock()
+        self._entries: OrderedDict[str, str] = OrderedDict()
+        self._max_entries = max_entries
+        self.db_path = db_path
+        if db_path:
+            with sqlite3.connect(db_path) as db:
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS payment_replays ("
+                    "fingerprint TEXT PRIMARY KEY, status TEXT NOT NULL, created_at REAL NOT NULL)"
+                )
+
+    @property
+    def persistent(self) -> bool:
+        return bool(self.db_path)
+
+    async def reserve(self, fingerprint: str) -> bool:
+        async with self._lock:
+            if self.db_path:
+                now = time.time()
+                try:
+                    with sqlite3.connect(self.db_path, timeout=5) as db:
+                        db.execute(
+                            "DELETE FROM payment_replays WHERE status = 'reserved' AND created_at < ?",
+                            (now - 300,),
+                        )
+                        db.execute(
+                            "INSERT INTO payment_replays VALUES (?, 'reserved', ?)",
+                            (fingerprint, now),
+                        )
+                        db.execute(
+                            "DELETE FROM payment_replays WHERE fingerprint IN ("
+                            "SELECT fingerprint FROM payment_replays WHERE status = 'settled' "
+                            "ORDER BY created_at DESC LIMIT -1 OFFSET ?)",
+                            (self._max_entries,),
+                        )
+                    return True
+                except sqlite3.IntegrityError:
+                    return False
+            if fingerprint in self._entries:
+                return False
+            self._entries[fingerprint] = "reserved"
+            self._entries.move_to_end(fingerprint)
+            while len(self._entries) > self._max_entries:
+                self._entries.popitem(last=False)
+            return True
+
+    async def commit(self, fingerprint: str) -> None:
+        async with self._lock:
+            if self.db_path:
+                with sqlite3.connect(self.db_path, timeout=5) as db:
+                    db.execute(
+                        "UPDATE payment_replays SET status = 'settled' WHERE fingerprint = ?",
+                        (fingerprint,),
+                    )
+                return
+            if fingerprint in self._entries:
+                self._entries[fingerprint] = "settled"
+                self._entries.move_to_end(fingerprint)
+
+    async def release(self, fingerprint: str) -> None:
+        async with self._lock:
+            if self.db_path:
+                with sqlite3.connect(self.db_path, timeout=5) as db:
+                    db.execute(
+                        "DELETE FROM payment_replays WHERE fingerprint = ? AND status = 'reserved'",
+                        (fingerprint,),
+                    )
+                return
+            if self._entries.get(fingerprint) == "reserved":
+                self._entries.pop(fingerprint, None)
+
+
+class PaymentGateway:
+    def __init__(
+        self,
+        *,
+        pay_to: str | None = None,
+        okx_base_url: str | None = None,
+        okx_api_key: str | None = None,
+        okx_secret_key: str | None = None,
+        okx_passphrase: str | None = None,
+        facilitator: Facilitator | None = None,
+        demo_mode: bool | None = None,
+        replay_guard: ReplayGuard | None = None,
+    ):
+        self.pay_to = (pay_to or os.getenv("LIFEOPS_PAYTO", ZERO_ADDRESS)).strip()
+        self.okx_base_url = okx_base_url or os.getenv("OKX_BASE_URL", "https://web3.okx.com")
+        self.demo_mode = _env_flag("LIFEOPS_DEMO_MODE") if demo_mode is None else demo_mode
+        self._facilitator = facilitator
+        credentials = {
+            "api_key": okx_api_key or os.getenv("OKX_API_KEY", ""),
+            "secret_key": okx_secret_key or os.getenv("OKX_SECRET_KEY", ""),
+            "passphrase": okx_passphrase or os.getenv("OKX_PASSPHRASE", ""),
+        }
+        if self._facilitator is None and all(credentials.values()):
+            self._facilitator = OKXFacilitatorClient(
+                OKXFacilitatorConfig(
+                    auth=OKXAuthConfig(**credentials),
+                    base_url=self.okx_base_url,
+                    sync_settle=True,
+                )
+            )
+        self._replays = replay_guard or ReplayGuard(
+            db_path=os.getenv("LIFEOPS_REPLAY_DB", "").strip() or None
+        )
+
+    @property
+    def payto_configured(self) -> bool:
+        return self.pay_to.lower() != ZERO_ADDRESS and len(self.pay_to) == 42
+
+    @property
+    def facilitator_configured(self) -> bool:
+        return self._facilitator is not None
+
+    @property
+    def ready_for_listing(self) -> bool:
+        return (
+            self.payto_configured
+            and self.facilitator_configured
+            and self._replays.persistent
+            and not self.demo_mode
+        )
+
+    @property
+    def replay_persistent(self) -> bool:
+        return self._replays.persistent
+
+    def requirements(self, service: str) -> PaymentRequirements:
+        return PaymentRequirements(
+            scheme="exact",
+            network=NETWORK,
+            asset=ASSET,
+            amount=base_units(service),
+            payTo=self.pay_to,
+            maxTimeoutSeconds=60,
+            extra={"name": ASSET_NAME, "version": ASSET_VERSION},
+        )
+
+    def challenge(self, service: str, resource_url: str) -> PaymentRequired:
+        return PaymentRequired(
+            x402Version=2,
+            error="Payment required",
+            resource=ResourceInfo(
+                url=resource_url,
+                description=f"LifeOps {service} document analysis",
+                mimeType="application/json",
+                serviceName="LifeOps",
+            ),
+            accepts=[self.requirements(service)],
+        )
+
+    def challenge_headers(self, service: str, resource_url: str) -> dict[str, str]:
+        return {
+            "PAYMENT-REQUIRED": encode_payment_required_header(
+                self.challenge(service, resource_url)
+            ),
+            "Cache-Control": "no-store",
+        }
+
+    async def verify(
+        self,
+        service: str,
+        payment_signature: str | None,
+        legacy_payment: str | None,
+    ) -> VerifiedPayment:
+        requirements = self.requirements(service)
+
+        if self.demo_mode and (payment_signature == "demo" or legacy_payment == "demo"):
+            fingerprint = hashlib.sha256(
+                f"demo:{service}:{datetime.now(timezone.utc).isoformat()}".encode()
+            ).hexdigest()
+            return VerifiedPayment(None, requirements, fingerprint, "demo", demo=True)
+
+        if legacy_payment is not None:
+            raise PaymentGatewayError(
+                400,
+                "legacy_payment_header",
+                "X-Payment is not accepted. Use the x402 v2 PAYMENT-SIGNATURE header.",
+            )
+        if not payment_signature:
+            raise PaymentGatewayError(402, "payment_required", "Payment is required.")
+        if not self.facilitator_configured:
+            raise PaymentGatewayError(
+                503,
+                "payment_service_unavailable",
+                "The payment facilitator is not configured.",
+            )
+
+        try:
+            payload = decode_payment_signature_header(payment_signature)
+        except Exception as exc:
+            raise PaymentGatewayError(
+                400, "invalid_payment_signature", "PAYMENT-SIGNATURE is malformed."
+            ) from exc
+
+        if not isinstance(payload, PaymentPayload) or payload.x402_version != 2:
+            raise PaymentGatewayError(400, "unsupported_x402_version", "x402 v2 is required.")
+        if payload.accepted != requirements:
+            raise PaymentGatewayError(
+                402,
+                "payment_requirements_mismatch",
+                "The signed payment does not match this service's requirements.",
+            )
+
+        fingerprint = hashlib.sha256(payment_signature.encode()).hexdigest()
+        if not await self._replays.reserve(fingerprint):
+            raise PaymentGatewayError(409, "payment_replayed", "This payment was already used.")
+
+        try:
+            verification = await self._facilitator.verify(payload, requirements)
+        except Exception as exc:
+            await self._replays.release(fingerprint)
+            raise PaymentGatewayError(
+                502, "payment_verification_failed", "The facilitator could not verify payment."
+            ) from exc
+
+        if not verification.is_valid:
+            await self._replays.release(fingerprint)
+            reason = verification.invalid_reason or "Payment verification failed."
+            raise PaymentGatewayError(402, "payment_invalid", reason)
+
+        return VerifiedPayment(
+            payload, requirements, fingerprint, verification.payer, demo=False
+        )
+
+    async def settle(self, verified: VerifiedPayment, service: str, caller: str) -> tuple[dict, str]:
+        if verified.demo:
+            digest = hashlib.sha256(
+                f"demo:{verified.fingerprint}:{caller}".encode()
+            ).hexdigest()
+            response = SettleResponse(
+                success=True,
+                transaction=f"demo-{digest[:24]}",
+                network=NETWORK,
+                payer="demo",
+                amount=base_units(service),
+            )
+            mode = "demo"
+        else:
+            try:
+                response = await self._facilitator.settle(
+                    verified.payload, verified.requirements
+                )
+            except Exception as exc:
+                await self._replays.release(verified.fingerprint)
+                raise PaymentGatewayError(
+                    502, "payment_settlement_failed", "The facilitator could not settle payment."
+                ) from exc
+            if not response.success:
+                await self._replays.release(verified.fingerprint)
+                reason = response.error_reason or "Payment settlement failed."
+                raise PaymentGatewayError(402, "payment_not_settled", reason)
+            await self._replays.commit(verified.fingerprint)
+            mode = "x402"
+
+        tx = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "service": service,
+            "caller": caller,
+            "payer": response.payer or verified.payer,
+            "amount": float(price_for(service)),
+            "amount_base_units": base_units(service),
+            "asset": ASSET_SYMBOL,
+            "network": NETWORK_NAME,
+            "chain": response.network,
+            "tx_hash": response.transaction,
+            "status": "settled",
+            "mode": mode,
+            "protocol": "x402 v2 / A2MCP",
+        }
+        _TX_LOG.appendleft(tx)
+        return tx, encode_payment_response_header(response)
+
+    async def abandon(self, verified: VerifiedPayment) -> None:
+        """Release a verified reservation when business processing fails."""
+        if not verified.demo:
+            await self._replays.release(verified.fingerprint)
 
 
 def recent_tx(limit: int = 20) -> list[dict]:
-    return list(_TX_LOG)[:limit]
+    public = []
+    for transaction in list(_TX_LOG)[: max(0, min(limit, 50))]:
+        item = transaction.copy()
+        item.pop("payer", None)
+        item.pop("caller", None)
+        public.append(item)
+    return public
+
+
+payment_gateway = PaymentGateway()

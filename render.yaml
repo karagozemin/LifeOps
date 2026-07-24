@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: lifeops-api
+    runtime: docker
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /health
+    plan: starter
+    disk:
+      name: lifeops-replay-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: LIFEOPS_PAYTO
+        sync: false
+      - key: OKX_API_KEY
+        sync: false
+      - key: OKX_SECRET_KEY
+        sync: false
+      - key: OKX_PASSPHRASE
+        sync: false
+      - key: LIFEOPS_REPLAY_DB
+        value: /var/data/payment-replays.sqlite3
+      - key: LIFEOPS_DEMO_MODE
+        value: "false"
+      - key: LIFEOPS_PREVIEW_ENABLED
+        value: "true"
+      - key: LIFEOPS_CORS_ORIGINS
+        sync: false
+
+  - type: web
+    name: lifeops-web
+    runtime: node
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    plan: starter
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE
+        sync: false

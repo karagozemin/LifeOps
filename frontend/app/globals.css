@@ -12,7 +12,7 @@ body {
 }
 
 body {
-  background-color: #0a0a0f; /* ink */
+  background-color: #090b0b;
   color: #e5e7eb;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -21,7 +21,7 @@ body {
 /* thin custom scrollbar for the tx terminal / panels */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #22222e transparent;
+  scrollbar-color: #2b3030 transparent;
 }
 
 *::-webkit-scrollbar {
@@ -34,6 +34,21 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background-color: #22222e; /* edge */
-  border-radius: 9999px;
+  background-color: #2b3030;
+  border-radius: 4px;
+}
+
+button,
+select,
+textarea,
+a {
+  letter-spacing: 0;
+}
+
+button:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 2px solid #b8f34a;
+  outline-offset: 2px;
 }
