@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Protocol
 
+import httpx
 from x402.http import (
     OKXAuthConfig,
     OKXFacilitatorClient,
@@ -63,6 +64,19 @@ def base_units(service: str) -> str:
 class Facilitator(Protocol):
     async def verify(self, payload: PaymentPayload, requirements: PaymentRequirements): ...
     async def settle(self, payload: PaymentPayload, requirements: PaymentRequirements): ...
+
+
+class ReplayStore(Protocol):
+    @property
+    def persistent(self) -> bool: ...
+
+    async def reserve(self, fingerprint: str) -> bool: ...
+    async def commit(self, fingerprint: str) -> None: ...
+    async def release(self, fingerprint: str) -> None: ...
+
+
+class ReplayStoreError(Exception):
+    pass
 
 
 class PaymentGatewayError(Exception):
@@ -158,6 +172,78 @@ class ReplayGuard:
                 self._entries.pop(fingerprint, None)
 
 
+class UpstashReplayGuard:
+    """Atomic cross-instance replay protection using Upstash Redis REST."""
+
+    def __init__(
+        self,
+        url: str,
+        token: str,
+        *,
+        ttl_seconds: int = 604_800,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
+        self.url = url.rstrip("/")
+        self.token = token
+        self.ttl_seconds = max(300, ttl_seconds)
+        self._transport = transport
+
+    @property
+    def persistent(self) -> bool:
+        return True
+
+    def _key(self, fingerprint: str) -> str:
+        return f"lifeops:payment-replay:{fingerprint}"
+
+    async def _command(self, *parts: str):
+        try:
+            async with httpx.AsyncClient(
+                base_url=self.url,
+                headers={"Authorization": f"Bearer {self.token}"},
+                timeout=5,
+                transport=self._transport,
+            ) as client:
+                response = await client.post("/", json=list(parts))
+                response.raise_for_status()
+                payload = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise ReplayStoreError("Persistent replay store is unavailable.") from exc
+        if payload.get("error"):
+            raise ReplayStoreError("Persistent replay store rejected the operation.")
+        return payload.get("result")
+
+    async def reserve(self, fingerprint: str) -> bool:
+        result = await self._command(
+            "SET",
+            self._key(fingerprint),
+            "reserved",
+            "NX",
+            "EX",
+            str(self.ttl_seconds),
+        )
+        return result == "OK"
+
+    async def commit(self, fingerprint: str) -> None:
+        # The reservation already has the full replay TTL. Keeping it unchanged
+        # avoids turning a completed payment into an error on a transient write.
+        return None
+
+    async def release(self, fingerprint: str) -> None:
+        script = (
+            "if redis.call('get', KEYS[1]) == 'reserved' then "
+            "return redis.call('del', KEYS[1]) else return 0 end"
+        )
+        await self._command("EVAL", script, "1", self._key(fingerprint))
+
+
+def default_replay_guard() -> ReplayStore:
+    upstash_url = os.getenv("UPSTASH_REDIS_REST_URL", "").strip()
+    upstash_token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "").strip()
+    if upstash_url and upstash_token:
+        return UpstashReplayGuard(upstash_url, upstash_token)
+    return ReplayGuard(db_path=os.getenv("LIFEOPS_REPLAY_DB", "").strip() or None)
+
+
 class PaymentGateway:
     def __init__(
         self,
@@ -169,7 +255,7 @@ class PaymentGateway:
         okx_passphrase: str | None = None,
         facilitator: Facilitator | None = None,
         demo_mode: bool | None = None,
-        replay_guard: ReplayGuard | None = None,
+        replay_guard: ReplayStore | None = None,
     ):
         self.pay_to = (pay_to or os.getenv("LIFEOPS_PAYTO", ZERO_ADDRESS)).strip()
         self.okx_base_url = okx_base_url or os.getenv("OKX_BASE_URL", "https://web3.okx.com")
@@ -188,9 +274,7 @@ class PaymentGateway:
                     sync_settle=True,
                 )
             )
-        self._replays = replay_guard or ReplayGuard(
-            db_path=os.getenv("LIFEOPS_REPLAY_DB", "").strip() or None
-        )
+        self._replays = replay_guard or default_replay_guard()
 
     @property
     def payto_configured(self) -> bool:
@@ -245,6 +329,14 @@ class PaymentGateway:
             "Cache-Control": "no-store",
         }
 
+    async def _release_reservation(self, fingerprint: str) -> None:
+        try:
+            await self._replays.release(fingerprint)
+        except ReplayStoreError:
+            # Retaining a reservation is safer than allowing a replay. Do not
+            # mask the facilitator or business error that caused the release.
+            pass
+
     async def verify(
         self,
         service: str,
@@ -291,19 +383,27 @@ class PaymentGateway:
             )
 
         fingerprint = hashlib.sha256(payment_signature.encode()).hexdigest()
-        if not await self._replays.reserve(fingerprint):
+        try:
+            reserved = await self._replays.reserve(fingerprint)
+        except ReplayStoreError as exc:
+            raise PaymentGatewayError(
+                503,
+                "replay_store_unavailable",
+                "Payment replay protection is temporarily unavailable.",
+            ) from exc
+        if not reserved:
             raise PaymentGatewayError(409, "payment_replayed", "This payment was already used.")
 
         try:
             verification = await self._facilitator.verify(payload, requirements)
         except Exception as exc:
-            await self._replays.release(fingerprint)
+            await self._release_reservation(fingerprint)
             raise PaymentGatewayError(
                 502, "payment_verification_failed", "The facilitator could not verify payment."
             ) from exc
 
         if not verification.is_valid:
-            await self._replays.release(fingerprint)
+            await self._release_reservation(fingerprint)
             reason = verification.invalid_reason or "Payment verification failed."
             raise PaymentGatewayError(402, "payment_invalid", reason)
 
@@ -330,12 +430,12 @@ class PaymentGateway:
                     verified.payload, verified.requirements
                 )
             except Exception as exc:
-                await self._replays.release(verified.fingerprint)
+                await self._release_reservation(verified.fingerprint)
                 raise PaymentGatewayError(
                     502, "payment_settlement_failed", "The facilitator could not settle payment."
                 ) from exc
             if not response.success:
-                await self._replays.release(verified.fingerprint)
+                await self._release_reservation(verified.fingerprint)
                 reason = response.error_reason or "Payment settlement failed."
                 raise PaymentGatewayError(402, "payment_not_settled", reason)
             await self._replays.commit(verified.fingerprint)
@@ -362,7 +462,7 @@ class PaymentGateway:
     async def abandon(self, verified: VerifiedPayment) -> None:
         """Release a verified reservation when business processing fails."""
         if not verified.demo:
-            await self._replays.release(verified.fingerprint)
+            await self._release_reservation(verified.fingerprint)
 
 
 def recent_tx(limit: int = 20) -> list[dict]:

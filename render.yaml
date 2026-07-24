@@ -5,11 +5,7 @@ services:
     dockerContext: ./backend
     dockerfilePath: ./backend/Dockerfile
     healthCheckPath: /health
-    plan: starter
-    disk:
-      name: lifeops-replay-data
-      mountPath: /var/data
-      sizeGB: 1
+    plan: free
     envVars:
       - key: LIFEOPS_PAYTO
         sync: false
@@ -19,8 +15,10 @@ services:
         sync: false
       - key: OKX_PASSPHRASE
         sync: false
-      - key: LIFEOPS_REPLAY_DB
-        value: /var/data/payment-replays.sqlite3
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
       - key: LIFEOPS_DEMO_MODE
         value: "false"
       - key: LIFEOPS_PREVIEW_ENABLED
@@ -34,7 +32,7 @@ services:
     rootDir: frontend
     buildCommand: npm ci && npm run build
     startCommand: npm start
-    plan: starter
+    plan: free
     envVars:
       - key: NEXT_PUBLIC_API_BASE
         sync: false

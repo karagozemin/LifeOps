@@ -24,7 +24,7 @@ Operational proof is tracked in [SUBMISSION.md](SUBMISSION.md). Nothing in this 
 - Correct overdue/upcoming state, future-only reminders, and RFC 5545 calendar output.
 - Multi-document audit merges personal obligations into one urgency-sorted calendar.
 - Real x402 v2 verify and synchronous settle through OKX on X Layer.
-- Replay protection persists across process restarts when `LIFEOPS_REPLAY_DB` is configured.
+- Replay protection persists across instances and restarts through Upstash Redis or mounted SQLite.
 
 No deadline is fabricated when the document does not contain one. The deterministic fallback remains schema-safe without an LLM key.
 
@@ -85,7 +85,8 @@ LIFEOPS_PAYTO=0x...                       # receiving X Layer wallet
 OKX_API_KEY=...                           # OKX facilitator HMAC credential
 OKX_SECRET_KEY=...
 OKX_PASSPHRASE=...
-LIFEOPS_REPLAY_DB=/var/data/replays.db    # persistent mounted disk
+UPSTASH_REDIS_REST_URL=...                # free persistent replay store
+UPSTASH_REDIS_REST_TOKEN=...
 LIFEOPS_DEMO_MODE=false
 LIFEOPS_CORS_ORIGINS=https://your-web-app.example
 ```
@@ -101,7 +102,9 @@ LIFEOPS_RESULT_TTL_SECONDS=1800
 NEXT_PUBLIC_API_BASE=https://your-api.example
 ```
 
-`render.yaml` defines the API, persistent replay disk, and frontend. Secret values are never stored in the repository.
+`render.yaml` defines the API, free-tier persistent replay store, and frontend. Secret values are never stored in the repository.
+
+`LIFEOPS_REPLAY_DB=/var/data/replays.db` remains available when the host provides a persistent mounted disk.
 
 ## API
 
