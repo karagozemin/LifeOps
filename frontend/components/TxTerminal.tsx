@@ -14,11 +14,15 @@ const COLORS: Record<StepEvent["kind"], string> = {
 };
 
 export default function TxTerminal({ log }: { log: StepEvent[] }) {
-  const endRef = useRef<HTMLDivElement>(null);
+  const traceRef = useRef<HTMLDivElement>(null);
   const [transactions, setTransactions] = useState<PaymentTx[]>([]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (log.length === 0 || !traceRef.current) return;
+    traceRef.current.scrollTo({
+      top: traceRef.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [log]);
 
   useEffect(() => {
@@ -47,7 +51,7 @@ export default function TxTerminal({ log }: { log: StepEvent[] }) {
           <span>Request trace</span>
           <span className="ml-auto font-mono">/scan</span>
         </div>
-        <div className="h-[250px] overflow-y-auto px-4 pb-4 font-mono text-xs leading-6">
+        <div ref={traceRef} className="h-[250px] overflow-y-auto px-4 pb-4 font-mono text-xs leading-6">
           {log.length === 0 ? (
             <p className="text-gray-600">Awaiting request</p>
           ) : (
@@ -58,7 +62,6 @@ export default function TxTerminal({ log }: { log: StepEvent[] }) {
               </div>
             ))
           )}
-          <div ref={endRef} />
         </div>
       </section>
 

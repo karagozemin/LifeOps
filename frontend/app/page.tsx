@@ -118,14 +118,14 @@ export default function Home() {
               />
 
               <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center">
-                <div className="grid grid-cols-3 rounded-md border border-edge bg-surface p-1" role="group" aria-label="Service level">
+                <div className="grid w-full min-w-0 grid-cols-3 rounded-md border border-edge bg-surface p-1 lg:w-auto" role="group" aria-label="Service level">
                   {SERVICES.map((item) => (
                     <button
                       key={item.id}
                       type="button"
                       onClick={() => setService(item.id)}
                       aria-pressed={service === item.id}
-                      className={`min-h-11 px-3 py-1 text-left text-xs transition ${
+                      className={`min-h-11 min-w-0 px-2 py-1 text-left text-xs transition sm:px-3 ${
                         service === item.id
                           ? "rounded bg-white text-black"
                           : "text-gray-400 hover:text-white"
