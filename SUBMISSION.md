@@ -7,7 +7,7 @@ This file is the release gate. Do not mark an item complete without a public lin
 | Evidence | Value | Verified |
 |---|---|---|
 | Repository | https://github.com/karagozemin/LifeOps | Yes |
-| Web app | `<PENDING>` | No |
+| Web app | https://life-ops-web1.vercel.app/ | Yes |
 | API health | https://lifeops-75gx.onrender.com/health | Yes |
 | ASP ID | `#9204` | Yes |
 | OKX.AI listing | Submitted for review | No |
@@ -24,7 +24,7 @@ This file is the release gate. Do not mark an item complete without a public lin
 - [x] The paid retry uses `PAYMENT-SIGNATURE`, not `X-Payment`.
 - [x] The response has `PAYMENT-RESPONSE` with a real transaction.
 - [ ] Reusing the same signature returns 409.
-- [ ] The public UI labels web analysis as preview and shows only real settlements.
+- [x] The public UI labels web analysis as preview and shows only real settlements.
 - [x] Passport travel risk is not double-counted.
 - [x] Empty or deadline-free text does not fabricate an obligation.
 - [ ] `.ics` imports successfully into a calendar.
