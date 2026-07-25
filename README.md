@@ -10,9 +10,9 @@ LifeOps is an agent-consumable ASP for the OKX.AI Lifestyle Companion category. 
 |---|---|
 | Public web app | Pending deployment |
 | Public API | [Live and listing-ready](https://lifeops-75gx.onrender.com/health) |
-| OKX.AI ASP ID | Pending registration |
+| OKX.AI ASP ID | `#9204` |
 | Real settlement tx | [Confirmed on X Layer](https://www.oklink.com/x-layer/tx/0xb8d39f8425bc4ae8ba1d846aacf3b9fcd5868799d5356c8534f5d72f06971d75) |
-| Marketplace listing | Pending review |
+| Marketplace listing | Submitted for review |
 
 Operational proof is tracked in [SUBMISSION.md](SUBMISSION.md). Nothing in this table is marked complete until it has a public, verifiable link.
 

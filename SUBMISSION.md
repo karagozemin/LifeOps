@@ -9,8 +9,8 @@ This file is the release gate. Do not mark an item complete without a public lin
 | Repository | https://github.com/karagozemin/LifeOps | Yes |
 | Web app | `<PENDING>` | No |
 | API health | https://lifeops-75gx.onrender.com/health | Yes |
-| ASP ID | `<PENDING>` | No |
-| OKX.AI listing | `<PENDING>` | No |
+| ASP ID | `#9204` | Yes |
+| OKX.AI listing | Submitted for review | No |
 | Real payment tx hash | `0xb8d39f8425bc4ae8ba1d846aacf3b9fcd5868799d5356c8534f5d72f06971d75` | Yes |
 | X Layer explorer | https://www.oklink.com/x-layer/tx/0xb8d39f8425bc4ae8ba1d846aacf3b9fcd5868799d5356c8534f5d72f06971d75 | Yes |
 | Demo video (90s max) | `<PENDING>` | No |
