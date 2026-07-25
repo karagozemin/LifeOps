@@ -69,7 +69,7 @@ export default function Home() {
     const timers = [
       window.setTimeout(() => setProcessingStep(1), 700),
       window.setTimeout(() => setProcessingStep(2), 1450),
-      window.setTimeout(() => setProcessingStep(3), 2300),
+      window.setTimeout(() => setProcessingStep(3), 2750),
     ];
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [loading]);
@@ -115,7 +115,7 @@ export default function Home() {
 
     try {
       const data = await scanPreview(text, service, caller, push);
-      const remainingDisplayTime = Math.max(0, 3200 - (performance.now() - startedAt));
+      const remainingDisplayTime = Math.max(0, 4200 - (performance.now() - startedAt));
       if (remainingDisplayTime > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, remainingDisplayTime));
       }
