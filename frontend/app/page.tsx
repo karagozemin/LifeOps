@@ -8,7 +8,10 @@ import {
   ArrowRight,
   Bot,
   CalendarCheck,
+  ChevronDown,
   Check,
+  CircleCheck,
+  FileText,
   FileSearch,
   Fingerprint,
   Layers3,
@@ -52,11 +55,24 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [entered, setEntered] = useState(false);
+  const [sampleId, setSampleId] = useState("");
+  const [processingStep, setProcessingStep] = useState(0);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setEntered(true), 120);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!loading) return;
+    setProcessingStep(0);
+    const timers = [
+      window.setTimeout(() => setProcessingStep(1), 420),
+      window.setTimeout(() => setProcessingStep(2), 900),
+      window.setTimeout(() => setProcessingStep(3), 1380),
+    ];
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [loading]);
 
   function openWorkspace() {
     document.getElementById("workspace")?.scrollIntoView({ behavior: "smooth" });
@@ -65,6 +81,7 @@ export default function Home() {
   function loadSample(id: string) {
     const sample = SAMPLES.find((item) => item.id === id);
     if (!sample) return;
+    setSampleId(id);
     setText(sample.text);
     setCaller(sample.caller);
     setService(sample.service);
@@ -76,6 +93,7 @@ export default function Home() {
 
   async function runScan() {
     if (!text.trim() || loading) return;
+    const startedAt = performance.now();
     setLoading(true);
     setError(null);
     setResult(null);
@@ -83,16 +101,18 @@ export default function Home() {
     setLog([]);
     const push = (event: StepEvent) => setLog((previous) => [...previous, event]);
 
+    window.setTimeout(() => {
+      document.getElementById("analysis-result")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+
     try {
       const data = await scanPreview(text, service, caller, push);
+      const remainingDisplayTime = Math.max(0, 1750 - (performance.now() - startedAt));
+      if (remainingDisplayTime > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, remainingDisplayTime));
+      }
       setResult(data.result);
       setIcsUrl(data.ics_url);
-      window.setTimeout(() => {
-        document.getElementById("analysis-result")?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 120);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Request failed";
       setError(message);
@@ -226,13 +246,17 @@ export default function Home() {
                 <h3>What needs your attention?</h3>
               </div>
               <label className="sample-control">
-                <span>Sample</span>
-                <select defaultValue="" onChange={(event) => loadSample(event.target.value)}>
+                <span className="sample-label">Example document</span>
+                <span className="sample-select-shell">
+                  <FileText size={17} aria-hidden="true" />
+                  <select value={sampleId} onChange={(event) => loadSample(event.target.value)}>
                   <option value="" disabled>Choose a document</option>
                   {SAMPLES.map((sample) => (
                     <option key={sample.id} value={sample.id}>{sample.label}</option>
                   ))}
-                </select>
+                  </select>
+                  <ChevronDown size={17} aria-hidden="true" />
+                </span>
               </label>
             </div>
 
@@ -283,14 +307,16 @@ export default function Home() {
           </section>
 
           <aside className="activity-panel" aria-label="x402 activity">
-            <TxTerminal log={log} />
+            <TxTerminal log={log} loading={loading} />
           </aside>
         </div>
 
         {error && <div role="alert" className="error-banner">{error}</div>}
 
         <div id="analysis-result" className="result-anchor">
-          {result ? (
+          {loading ? (
+            <ProcessingView step={processingStep} service={selectedService.label} />
+          ) : result ? (
             <ResultView result={result} icsUrl={icsUrl} />
           ) : (
             <div className="empty-result">
@@ -324,5 +350,41 @@ export default function Home() {
         </div>
       </footer>
     </main>
+  );
+}
+
+const PROCESSING_STEPS = [
+  "Reading document structure",
+  "Mapping dates and obligations",
+  "Checking financial exposure",
+  "Building your action plan",
+];
+
+function ProcessingView({ step, service }: { step: number; service: string }) {
+  const progress = [18, 42, 68, 88][step] ?? 18;
+
+  return (
+    <section className="processing-view" role="status" aria-live="polite">
+      <div className="processing-orbit" aria-hidden="true">
+        <span className="orbit-ring orbit-ring-one" />
+        <span className="orbit-ring orbit-ring-two" />
+        <span className="processing-core"><ScanLine size={24} /></span>
+      </div>
+      <div className="processing-copy">
+        <span className="section-index">02 / INTELLIGENCE</span>
+        <h3>LifeOps is reading the signals.</h3>
+        <p>{PROCESSING_STEPS[step]}</p>
+        <div className="processing-meter" aria-hidden="true"><span style={{ width: `${progress}%` }} /></div>
+        <div className="processing-meta"><span>{progress}%</span><span>{service}</span><span>Transient session</span></div>
+      </div>
+      <ol className="processing-steps">
+        {PROCESSING_STEPS.map((label, index) => (
+          <li key={label} className={index < step ? "done" : index === step ? "active" : ""}>
+            <span>{index < step ? <CircleCheck size={15} /> : String(index + 1).padStart(2, "0")}</span>
+            <strong>{label}</strong>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

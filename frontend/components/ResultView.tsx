@@ -24,7 +24,7 @@ export default function ResultView({ result, icsUrl }: { result: LifeOpsResult; 
   const isMulti = result.document_type === "multi";
 
   return (
-    <div className="result-shell">
+    <div className="result-shell result-enter">
       <header className="result-header">
         <div className="result-title">
           <span className="result-icon"><FileCheck2 size={17} /></span>

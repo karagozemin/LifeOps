@@ -5,7 +5,7 @@ import { Activity, ArrowUpRight, CheckCircle2, Radio, ReceiptText, ShieldCheck }
 import { recentTransactions, type StepEvent } from "@/lib/api";
 import type { PaymentTx } from "@/lib/types";
 
-export default function TxTerminal({ log }: { log: StepEvent[] }) {
+export default function TxTerminal({ log, loading = false }: { log: StepEvent[]; loading?: boolean }) {
   const traceRef = useRef<HTMLDivElement>(null);
   const [transactions, setTransactions] = useState<PaymentTx[]>([]);
 
@@ -23,7 +23,8 @@ export default function TxTerminal({ log }: { log: StepEvent[] }) {
   }, []);
 
   return (
-    <div className="terminal-shell">
+    <div className={`terminal-shell ${loading ? "is-processing" : ""}`}>
+      <span className="terminal-scan-line" aria-hidden="true" />
       <header className="terminal-header">
         <div><Activity size={16} /><span>Protocol proof</span></div>
         <span className="terminal-live"><Radio size={12} /> LIVE</span>
