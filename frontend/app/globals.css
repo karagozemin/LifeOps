@@ -265,7 +265,7 @@ a:focus-visible {
 .empty-capabilities svg { color: var(--cyan); }
 
 .processing-view { position: relative; min-height: 280px; display: grid; grid-template-columns: 130px minmax(0, 1fr) minmax(280px, 360px); align-items: center; gap: 34px; overflow: hidden; padding: 38px 40px; border: 1px solid #344145; border-radius: 6px; background: #0d1112; box-shadow: 0 20px 55px rgba(0,0,0,.2); animation: processingEnter .45s cubic-bezier(.2,.75,.2,1) both; }
-.processing-view::before { content: ""; position: absolute; z-index: 0; left: 0; right: 0; top: 0; height: 1px; background: var(--cyan); box-shadow: 0 0 18px rgba(18,201,230,.65); opacity: .65; animation: resultScan 2.1s ease-in-out infinite; }
+.processing-view::before { content: ""; position: absolute; z-index: 0; left: 0; right: 0; top: 0; height: 1px; background: var(--cyan); box-shadow: 0 0 18px rgba(18,201,230,.65); opacity: .65; animation: resultScan 2.8s ease-in-out infinite; }
 .processing-view > * { position: relative; z-index: 1; }
 .processing-orbit { width: 112px; height: 112px; display: grid; place-items: center; position: relative; }
 .orbit-ring { position: absolute; border: 1px solid #2f3c40; }
@@ -300,7 +300,7 @@ a:focus-visible {
 /* Protocol activity */
 .terminal-shell { position: relative; height: 100%; min-height: 588px; display: grid; grid-template-rows: 58px auto minmax(220px, 1fr) minmax(180px, .78fr) 42px; overflow: hidden; background: #0d1011; }
 .terminal-scan-line { position: absolute; z-index: 3; top: 0; left: 0; right: 0; height: 1px; background: var(--cyan); box-shadow: 0 0 14px rgba(18,201,230,.7); opacity: 0; pointer-events: none; }
-.terminal-shell.is-processing .terminal-scan-line { animation: terminalSweep 1.8s ease-in-out infinite; }
+.terminal-shell.is-processing .terminal-scan-line { animation: terminalSweep 2.45s ease-in-out infinite; }
 .terminal-shell.is-processing .terminal-live { animation: livePulse 1.25s ease-in-out infinite; }
 .terminal-header { display: flex; align-items: center; justify-content: space-between; padding: 0 17px; border-bottom: 1px solid var(--line); }
 .terminal-header > div { display: flex; align-items: center; gap: 8px; color: white; font-size: 13px; font-weight: 600; }

@@ -67,9 +67,9 @@ export default function Home() {
     if (!loading) return;
     setProcessingStep(0);
     const timers = [
-      window.setTimeout(() => setProcessingStep(1), 420),
-      window.setTimeout(() => setProcessingStep(2), 900),
-      window.setTimeout(() => setProcessingStep(3), 1380),
+      window.setTimeout(() => setProcessingStep(1), 700),
+      window.setTimeout(() => setProcessingStep(2), 1450),
+      window.setTimeout(() => setProcessingStep(3), 2300),
     ];
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [loading]);
@@ -99,18 +99,23 @@ export default function Home() {
     setResult(null);
     setIcsUrl(null);
     setLog([]);
-    const push = (event: StepEvent) => setLog((previous) => [...previous, event]);
+    let visualEventIndex = 0;
+    const push = (event: StepEvent) => {
+      const delay = visualEventIndex * 300;
+      visualEventIndex += 1;
+      window.setTimeout(() => setLog((previous) => [...previous, event]), delay);
+    };
 
     window.setTimeout(() => {
       document.getElementById("protocol-proof")?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 80);
     window.setTimeout(() => {
       document.getElementById("analysis-result")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 1050);
+    }, 1650);
 
     try {
       const data = await scanPreview(text, service, caller, push);
-      const remainingDisplayTime = Math.max(0, 1750 - (performance.now() - startedAt));
+      const remainingDisplayTime = Math.max(0, 3200 - (performance.now() - startedAt));
       if (remainingDisplayTime > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, remainingDisplayTime));
       }
