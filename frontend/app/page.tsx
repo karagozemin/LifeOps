@@ -102,8 +102,11 @@ export default function Home() {
     const push = (event: StepEvent) => setLog((previous) => [...previous, event]);
 
     window.setTimeout(() => {
+      document.getElementById("protocol-proof")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+    window.setTimeout(() => {
       document.getElementById("analysis-result")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 120);
+    }, 1050);
 
     try {
       const data = await scanPreview(text, service, caller, push);
@@ -306,7 +309,12 @@ export default function Home() {
             </div>
           </section>
 
-          <aside className="activity-panel" aria-label="x402 activity">
+          <aside
+            id="protocol-proof"
+            className={`activity-panel ${loading ? "is-focused" : ""}`}
+            aria-label="x402 activity"
+            aria-busy={loading}
+          >
             <TxTerminal log={log} loading={loading} />
           </aside>
         </div>
