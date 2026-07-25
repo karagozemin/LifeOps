@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="LifeOps.png" alt="LifeOps" width="440" height="440" />
+  <img src="LifeOps.png" alt="LifeOps" width="440" height="250" />
 </p>
 
 <p align="center">
