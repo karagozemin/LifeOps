@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="frontend/public/lifeops-wordmark.png" alt="LifeOps" width="560" />
+  <img src="LifeOps.png" alt="LifeOps" width="440" height="440" />
 </p>
 
 <p align="center">
