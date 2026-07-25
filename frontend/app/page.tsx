@@ -107,24 +107,27 @@ export default function Home() {
   return (
     <main className="site-shell">
       <nav className="site-nav" aria-label="Primary navigation">
-        <a href="#top" className="brand-link" aria-label="LifeOps home">
-          <Image
-            src="/lifeops-wordmark.png"
-            alt="LifeOps"
-            width={1100}
-            height={460}
-            priority
-            className="brand-wordmark"
-          />
-        </a>
-        <div className="nav-proof">
-          <span className="live-dot" aria-hidden="true" />
-          Live on X Layer
+        <div className="nav-inner">
+          <a href="#top" className="brand-link" aria-label="LifeOps home">
+            <Image
+              src="/lifeops-symbol.png"
+              alt=""
+              width={380}
+              height={380}
+              priority
+              className="brand-symbol"
+            />
+            <span>LifeOps</span>
+          </a>
+          <div className="nav-proof">
+            <span className="live-dot" aria-hidden="true" />
+            Live on X Layer
+          </div>
+          <button type="button" onClick={openWorkspace} className="nav-cta">
+            Open workspace
+            <ArrowRight size={15} aria-hidden="true" />
+          </button>
         </div>
-        <button type="button" onClick={openWorkspace} className="nav-cta">
-          Open workspace
-          <ArrowRight size={15} aria-hidden="true" />
-        </button>
       </nav>
 
       <section id="top" className={`hero ${entered ? "hero-entered" : ""}`}>
@@ -196,12 +199,14 @@ export default function Home() {
       </section>
 
       <section className="proof-band" aria-label="Platform proof">
-        {PROOF.map((item) => (
-          <div key={item.value} className="proof-item">
-            <strong>{item.value}</strong>
-            <span>{item.label}</span>
-          </div>
-        ))}
+        <div className="proof-inner">
+          {PROOF.map((item) => (
+            <div key={item.value} className="proof-item">
+              <strong>{item.value}</strong>
+              <span>{item.label}</span>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section id="workspace" className="workspace-section">
@@ -309,9 +314,14 @@ export default function Home() {
       </section>
 
       <footer className="site-footer">
-        <Image src="/lifeops-wordmark.png" alt="LifeOps" width={1100} height={460} className="footer-logo" />
-        <p>Personal deadline intelligence. Built for the OKX.AI agent economy.</p>
-        <div><span className="live-dot" /> API ready</div>
+        <div className="footer-inner">
+          <a href="#top" className="footer-brand" aria-label="LifeOps home">
+            <Image src="/lifeops-symbol.png" alt="" width={380} height={380} />
+            <span>LifeOps</span>
+          </a>
+          <p>Personal deadline intelligence. Built for the OKX.AI agent economy.</p>
+          <div className="footer-status"><span className="live-dot" /> API ready</div>
+        </div>
       </footer>
     </main>
   );
