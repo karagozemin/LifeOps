@@ -8,28 +8,28 @@ This file is the release gate. Do not mark an item complete without a public lin
 |---|---|---|
 | Repository | https://github.com/karagozemin/LifeOps | Yes |
 | Web app | `<PENDING>` | No |
-| API health | `<PENDING>/health` | No |
+| API health | https://lifeops-75gx.onrender.com/health | Yes |
 | ASP ID | `<PENDING>` | No |
 | OKX.AI listing | `<PENDING>` | No |
-| Real payment tx hash | `<PENDING>` | No |
-| X Layer explorer | `<PENDING>` | No |
+| Real payment tx hash | `0xb8d39f8425bc4ae8ba1d846aacf3b9fcd5868799d5356c8534f5d72f06971d75` | Yes |
+| X Layer explorer | https://www.oklink.com/x-layer/tx/0xb8d39f8425bc4ae8ba1d846aacf3b9fcd5868799d5356c8534f5d72f06971d75 | Yes |
 | Demo video (90s max) | `<PENDING>` | No |
 | X post with `#OKXAI` | `<PENDING>` | No |
 | HackQuest submission | `<PENDING>` | No |
 
 ## Final technical checks
 
-- [ ] Production `/health` reports `ready_for_listing: true` and `demo_mode: false`.
-- [ ] The 402 challenge has `x402Version: 2`, `resource`, and `accepts[]`.
-- [ ] The paid retry uses `PAYMENT-SIGNATURE`, not `X-Payment`.
-- [ ] The response has `PAYMENT-RESPONSE` with a real transaction.
+- [x] Production `/health` reports `ready_for_listing: true` and `demo_mode: false`.
+- [x] The 402 challenge has `x402Version: 2`, `resource`, and `accepts[]`.
+- [x] The paid retry uses `PAYMENT-SIGNATURE`, not `X-Payment`.
+- [x] The response has `PAYMENT-RESPONSE` with a real transaction.
 - [ ] Reusing the same signature returns 409.
 - [ ] The public UI labels web analysis as preview and shows only real settlements.
-- [ ] Passport travel risk is not double-counted.
-- [ ] Empty or deadline-free text does not fabricate an obligation.
+- [x] Passport travel risk is not double-counted.
+- [x] Empty or deadline-free text does not fabricate an obligation.
 - [ ] `.ics` imports successfully into a calendar.
-- [ ] Desktop and mobile layouts have no overlap or horizontal overflow.
-- [ ] Backend tests, frontend typecheck/build, and npm audit pass.
+- [x] Desktop and mobile layouts have no overlap or horizontal overflow.
+- [x] Backend tests, frontend typecheck/build, and npm audit pass.
 
 ## 90-second demo cut
 
@@ -51,7 +51,7 @@ This file is the release gate. Do not mark an item complete without a public lin
 ## Submission order
 
 1. Wallet login and funding.
-2. Public deploy with production secrets and persistent replay disk.
+2. Public deploy with production secrets and a persistent replay store.
 3. Real 0.01 USDT0 smoke payment and tx evidence.
 4. ASP registration with all services.
 5. Marketplace review submission.
