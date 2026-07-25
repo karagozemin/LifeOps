@@ -4,13 +4,14 @@ Deadline: 27 July 2026, 23:59 UTC. The listing must be live before the HackQuest
 
 ## Readiness gate
 
-- [ ] Public HTTPS API is stable.
-- [ ] `GET /health` returns `ready_for_listing: true`.
-- [ ] `LIFEOPS_DEMO_MODE=false` in production.
-- [ ] Unpaid `POST /scan` returns 402 plus a standard `PAYMENT-REQUIRED` header.
-- [ ] A funded Agentic Wallet completes one real 0.01 USDT0 call.
-- [ ] The real `PAYMENT-RESPONSE` decodes to an X Layer transaction hash.
-- [ ] The tx hash is recorded in `SUBMISSION.md`.
+- [x] Public HTTPS API is stable.
+- [x] `GET /health` returns `ready_for_listing: true`.
+- [x] `LIFEOPS_DEMO_MODE=false` in production.
+- [x] Unpaid `POST /scan` returns 402 plus a standard `PAYMENT-REQUIRED` header.
+- [x] A funded Agentic Wallet completes one real 0.01 USDT0 call.
+- [x] The real `PAYMENT-RESPONSE` decodes to an X Layer transaction hash.
+- [x] The tx hash is recorded in `SUBMISSION.md`.
+- [ ] ASP [`#9204`](https://www.okx.ai/agents/9204) service update is approved and live.
 
 ## ASP identity
 

@@ -9,8 +9,8 @@ This file is the release gate. Do not mark an item complete without a public lin
 | Repository | https://github.com/karagozemin/LifeOps | Yes |
 | Web app | https://life-ops-web1.vercel.app/ | Yes |
 | API health | https://lifeops-75gx.onrender.com/health | Yes |
-| ASP ID | `#9204` | Yes |
-| OKX.AI listing | Submitted for review | No |
+| ASP ID | [`#9204`](https://www.okx.ai/agents/9204) | Yes |
+| OKX.AI listing | [Service update under review](https://www.okx.ai/agents/9204) | No |
 | Real payment tx hash | `0xb8d39f8425bc4ae8ba1d846aacf3b9fcd5868799d5356c8534f5d72f06971d75` | Yes |
 | X Layer explorer | https://www.oklink.com/x-layer/tx/0xb8d39f8425bc4ae8ba1d846aacf3b9fcd5868799d5356c8534f5d72f06971d75 | Yes |
 | Demo video (90s max) | `<PENDING>` | No |
@@ -30,6 +30,8 @@ This file is the release gate. Do not mark an item complete without a public lin
 - [ ] `.ics` imports successfully into a calendar.
 - [x] Desktop and mobile layouts have no overlap or horizontal overflow.
 - [x] Backend tests, frontend typecheck/build, and npm audit pass.
+
+Marketplace verification on 25 July 2026 showed one live service: `Life Document Scan` at 0.01 USDT. An on-chain update adding `Full Action Pack` at 0.05 USDT and `Multi-Document Life Audit` at 0.20 USDT was submitted successfully in transaction `0xadbe3b564bd0e1823b287a671f51541b473a833bde6cc5d515971250fbb72681`. The update returned the listing to review; it will go live automatically after approval. Verify marketplace visibility before recording the demo.
 
 ## 90-second demo cut
 

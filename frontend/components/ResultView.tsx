@@ -2,163 +2,145 @@
 
 import {
   AlertTriangle,
+  ArrowUpRight,
   CalendarDays,
-  CheckCircle2,
+  Check,
+  CircleDollarSign,
   Download,
   FileCheck2,
+  Fingerprint,
   Quote,
 } from "lucide-react";
 import type { LifeOpsResult, Obligation } from "@/lib/types";
 import { icsDownloadUrl } from "@/lib/api";
 
-function statusStyle(obligation: Obligation) {
-  if (obligation.status === "overdue") {
-    return { label: "Overdue", className: "border-danger/40 bg-danger/10 text-red-300" };
-  }
-  if (obligation.status === "due_soon") {
-    return { label: `${obligation.days_remaining} days`, className: "border-warn/40 bg-warn/10 text-warn" };
-  }
-  return { label: `${obligation.days_remaining} days`, className: "border-ok/30 bg-ok/10 text-ok" };
+function statusMeta(obligation: Obligation) {
+  if (obligation.status === "overdue") return { label: "Overdue", tone: "overdue" };
+  if (obligation.status === "due_soon") return { label: `${obligation.days_remaining} days`, tone: "soon" };
+  return { label: `${obligation.days_remaining} days`, tone: "upcoming" };
 }
 
-export default function ResultView({
-  result,
-  icsUrl,
-}: {
-  result: LifeOpsResult;
-  icsUrl?: string | null;
-}) {
+export default function ResultView({ result, icsUrl }: { result: LifeOpsResult; icsUrl?: string | null }) {
   const isMulti = result.document_type === "multi";
 
   return (
-    <div className="rounded-lg border border-edge bg-panel">
-      <div className="flex flex-wrap items-center gap-3 border-b border-edge px-4 py-3">
-        <FileCheck2 size={17} className="text-accent" aria-hidden="true" />
-        <h2 className="text-sm font-medium text-white">Analysis result</h2>
-        <span className="rounded border border-edge bg-surface px-2 py-1 font-mono text-[11px] uppercase text-gray-300">
-          {result.document_type.replaceAll("_", " ")}
-        </span>
-        {isMulti && <span className="text-xs text-warn">{result.documents_scanned} documents</span>}
-        <span className="ml-auto font-mono text-xs text-muted">
-          {(result.confidence * 100).toFixed(0)}% · {result.extraction_mode}
-        </span>
+    <div className="result-shell">
+      <header className="result-header">
+        <div className="result-title">
+          <span className="result-icon"><FileCheck2 size={17} /></span>
+          <div>
+            <span className="section-index">02 / INTELLIGENCE</span>
+            <h2>Life action plan</h2>
+          </div>
+        </div>
+        <div className="result-meta">
+          <span>{result.document_type.replaceAll("_", " ")}</span>
+          {isMulti && <span>{result.documents_scanned} documents</span>}
+          <span>{(result.confidence * 100).toFixed(0)}% confidence</span>
+          <span>{result.extraction_mode}</span>
+        </div>
         {icsUrl && (
-          <a
-            href={icsDownloadUrl(icsUrl)}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-edge bg-surface px-3 text-xs font-medium text-white hover:border-accent"
-          >
-            <Download size={14} aria-hidden="true" />
-            Calendar
+          <a href={icsDownloadUrl(icsUrl)} className="calendar-button">
+            <Download size={15} />
+            Add to calendar
           </a>
         )}
-      </div>
+      </header>
 
-      <div className="grid border-b border-edge sm:grid-cols-[220px_1fr]">
-        <div className="border-b border-edge bg-danger/5 p-4 sm:border-b-0 sm:border-r">
-          <p className="text-xs text-red-300">Money at risk</p>
-          <p className="mt-1 text-3xl font-semibold text-danger">
-            ${result.total_money_at_risk_usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-          </p>
+      <section className="risk-overview" aria-label="Risk overview">
+        <div className="risk-primary">
+          <span>Money exposed</span>
+          <strong>${result.total_money_at_risk_usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
+          <small>Conservative total across detected obligations</small>
         </div>
-        <div className="grid grid-cols-2 gap-px bg-edge sm:grid-cols-3">
-          <Metric label="Obligations" value={String(result.obligations.length)} />
-          <Metric label="Reminders" value={String(result.reminders.length)} />
-          <Metric label="Evidence" value={String(result.evidence.length)} />
-        </div>
-      </div>
+        <Metric value={String(result.obligations.length)} label="Obligations" />
+        <Metric value={String(result.reminders.length)} label="Reminders" />
+        <Metric value={String(result.evidence.length)} label="Evidence points" />
+      </section>
 
       {result.warnings.length > 0 && (
-        <div className="flex flex-wrap gap-2 border-b border-edge px-4 py-3">
+        <div className="warning-row">
           {result.warnings.map((warning) => (
-            <span key={warning} className="inline-flex items-center gap-1.5 text-xs text-warn">
-              <AlertTriangle size={13} aria-hidden="true" />
-              {warning.replaceAll("_", " ")}
-            </span>
+            <span key={warning}><AlertTriangle size={13} />{warning.replaceAll("_", " ")}</span>
           ))}
         </div>
       )}
 
-      <div className="divide-y divide-edge">
+      <section className="obligation-list" aria-label="Detected obligations">
+        <div className="subsection-heading">
+          <span>PRIORITY QUEUE</span>
+          <span>{result.obligations.length.toString().padStart(2, "0")} detected</span>
+        </div>
         {result.obligations.length === 0 ? (
-          <div className="p-6 text-center text-sm text-muted">No supported deadline found</div>
+          <div className="no-obligations">No supported deadline found. LifeOps did not fabricate one.</div>
         ) : (
           result.obligations.map((obligation, index) => {
-            const status = statusStyle(obligation);
+            const status = statusMeta(obligation);
             return (
-              <article key={`${obligation.title}-${obligation.due_date}-${index}`} className="p-4">
-                <div className="flex items-start gap-3">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-medium text-white">{obligation.title}</h3>
-                    <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-                      <span>Due {obligation.due_date}</span>
-                      <span>Start {obligation.start_action_by}</span>
-                    </p>
+              <article key={`${obligation.title}-${obligation.due_date}-${index}`} className="obligation-row">
+                <div className="obligation-number">{String(index + 1).padStart(2, "0")}</div>
+                <div className="obligation-main">
+                  <div className="obligation-title-row">
+                    <div>
+                      <span className="obligation-date">DUE {obligation.due_date} · START {obligation.start_action_by}</span>
+                      <h3>{obligation.title}</h3>
+                    </div>
+                    <span className={`status-chip ${status.tone}`}>{status.label}</span>
                   </div>
-                  <span className={`shrink-0 rounded border px-2 py-1 font-mono text-[11px] ${status.className}`}>
-                    {status.label}
-                  </span>
+                  <p className="risk-copy">{obligation.risk_if_missed}</p>
+                  <ol className="action-steps">
+                    {obligation.steps.map((step, stepIndex) => (
+                      <li key={`${stepIndex}-${step}`}><span><Check size={12} /></span>{step}</li>
+                    ))}
+                  </ol>
                 </div>
-
-                <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_220px]">
-                  <div>
-                    <p className="text-sm leading-6 text-gray-300">{obligation.risk_if_missed}</p>
-                    <ol className="mt-3 space-y-2">
-                      {obligation.steps.map((step, stepIndex) => (
-                        <li key={`${stepIndex}-${step}`} className="flex gap-2 text-sm text-gray-300">
-                          <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
-                          <span>{step}</span>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                  <div className="rounded-md border border-edge bg-surface p-3">
-                    <p className="font-mono text-lg font-semibold text-danger">
-                      ${obligation.money_at_risk_usd.toLocaleString()}
-                    </p>
-                    <p className="mt-1 text-xs leading-5 text-muted">{obligation.risk_basis}</p>
-                    <p className="mt-2 font-mono text-[10px] uppercase text-gray-600">
-                      {obligation.money_at_risk_is_estimate ? "Estimated" : "Document-backed"}
-                    </p>
-                  </div>
-                </div>
+                <aside className="risk-basis">
+                  <CircleDollarSign size={16} />
+                  <strong>${obligation.money_at_risk_usd.toLocaleString()}</strong>
+                  <p>{obligation.risk_basis}</p>
+                  <span>{obligation.money_at_risk_is_estimate ? "Conservative estimate" : "Document-backed"}</span>
+                </aside>
               </article>
             );
           })
         )}
-      </div>
+      </section>
 
-      <div className="grid border-t border-edge lg:grid-cols-2">
-        <section className="border-b border-edge p-4 lg:border-b-0 lg:border-r" aria-label="Extracted entities">
-          <SectionTitle icon={FileCheck2}>Entities</SectionTitle>
-          <dl className="mt-3 space-y-2 text-sm">
-            {result.entities.holder && <Row label="Holder" value={result.entities.holder} />}
-            {result.entities.provider && <Row label="Provider" value={result.entities.provider} />}
-            {result.entities.expiry_date && <Row label="Expiry" value={result.entities.expiry_date} />}
-            {result.entities.amount_usd != null && <Row label="Amount" value={`$${result.entities.amount_usd}`} />}
-            {result.entities.reference && <Row label="Reference" value={result.entities.reference} />}
-            {!Object.values(result.entities).some((value) => value != null) && (
-              <p className="text-sm text-muted">No entities extracted</p>
-            )}
+      <div className="result-details">
+        <section aria-label="Extracted entities">
+          <DetailTitle icon={Fingerprint}>Extracted entities</DetailTitle>
+          <dl className="entity-list">
+            {result.entities.holder && <DataRow label="Holder" value={result.entities.holder} />}
+            {result.entities.provider && <DataRow label="Provider" value={result.entities.provider} />}
+            {result.entities.expiry_date && <DataRow label="Expiry" value={result.entities.expiry_date} />}
+            {result.entities.amount_usd != null && <DataRow label="Amount" value={`$${result.entities.amount_usd}`} />}
+            {result.entities.reference && <DataRow label="Reference" value={result.entities.reference} />}
+            {!Object.values(result.entities).some((value) => value != null) && <p className="detail-empty">No entities extracted</p>}
           </dl>
         </section>
-
-        <section className="p-4" aria-label="Calendar reminders">
-          <SectionTitle icon={CalendarDays}>Reminders</SectionTitle>
-          <ul className="mt-3 space-y-2 font-mono text-xs text-gray-300">
-            {result.reminders.map((reminder) => <li key={reminder}>{reminder}</li>)}
-            {result.reminders.length === 0 && <li className="text-muted">No future reminders</li>}
-          </ul>
+        <section aria-label="Calendar reminders">
+          <DetailTitle icon={CalendarDays}>Calendar sequence</DetailTitle>
+          <ol className="reminder-list">
+            {result.reminders.map((reminder, index) => (
+              <li key={reminder}><span>{String(index + 1).padStart(2, "0")}</span>{reminder}</li>
+            ))}
+            {result.reminders.length === 0 && <li className="detail-empty">No future reminders</li>}
+          </ol>
         </section>
       </div>
 
       {result.evidence.length > 0 && (
-        <section className="border-t border-edge p-4" aria-label="Source evidence">
-          <SectionTitle icon={Quote}>Source evidence</SectionTitle>
-          <div className="mt-3 divide-y divide-edge">
+        <section className="evidence-section" aria-label="Source evidence">
+          <div className="evidence-heading">
+            <DetailTitle icon={Quote}>Source evidence</DetailTitle>
+            <span><Check size={12} /> Traceable to input</span>
+          </div>
+          <div className="evidence-list">
             {result.evidence.map((item, index) => (
-              <blockquote key={`${item.field}-${index}`} className="grid gap-1 py-3 text-sm sm:grid-cols-[130px_1fr]">
-                <span className="font-mono text-xs text-accent">{item.field}</span>
-                <span className="text-gray-300">“{item.source_text}”</span>
+              <blockquote key={`${item.field}-${index}`}>
+                <span>{item.field}</span>
+                <p>“{item.source_text}”</p>
+                <ArrowUpRight size={14} aria-hidden="true" />
               </blockquote>
             ))}
           </div>
@@ -169,28 +151,13 @@ export default function ResultView({
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-panel p-4">
-      <p className="text-xs text-muted">{label}</p>
-      <p className="mt-1 font-mono text-lg text-white">{value}</p>
-    </div>
-  );
+  return <div className="risk-metric"><strong>{value}</strong><span>{label}</span></div>;
 }
 
-function SectionTitle({ icon: Icon, children }: { icon: typeof FileCheck2; children: React.ReactNode }) {
-  return (
-    <h3 className="flex items-center gap-2 text-xs font-medium uppercase text-muted">
-      <Icon size={14} aria-hidden="true" />
-      {children}
-    </h3>
-  );
+function DetailTitle({ icon: Icon, children }: { icon: typeof Fingerprint; children: React.ReactNode }) {
+  return <h3 className="detail-title"><Icon size={14} />{children}</h3>;
 }
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[90px_1fr] gap-3">
-      <dt className="text-muted">{label}</dt>
-      <dd className="break-words text-gray-200">{value}</dd>
-    </div>
-  );
+function DataRow({ label, value }: { label: string; value: string }) {
+  return <div><dt>{label}</dt><dd>{value}</dd></div>;
 }

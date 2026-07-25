@@ -1,17 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Activity, ExternalLink, Radio, ReceiptText } from "lucide-react";
+import { Activity, ArrowUpRight, CheckCircle2, Radio, ReceiptText, ShieldCheck } from "lucide-react";
 import { recentTransactions, type StepEvent } from "@/lib/api";
 import type { PaymentTx } from "@/lib/types";
-
-const COLORS: Record<StepEvent["kind"], string> = {
-  info: "text-gray-400",
-  http: "text-warn",
-  tx: "text-accent",
-  ok: "text-ok",
-  error: "text-danger",
-};
 
 export default function TxTerminal({ log }: { log: StepEvent[] }) {
   const traceRef = useRef<HTMLDivElement>(null);
@@ -19,10 +11,7 @@ export default function TxTerminal({ log }: { log: StepEvent[] }) {
 
   useEffect(() => {
     if (log.length === 0 || !traceRef.current) return;
-    traceRef.current.scrollTo({
-      top: traceRef.current.scrollHeight,
-      behavior: "smooth",
-    });
+    traceRef.current.scrollTo({ top: traceRef.current.scrollHeight, behavior: "smooth" });
   }, [log]);
 
   useEffect(() => {
@@ -30,77 +19,64 @@ export default function TxTerminal({ log }: { log: StepEvent[] }) {
     const refresh = () => recentTransactions().then((items) => active && setTransactions(items)).catch(() => undefined);
     refresh();
     const timer = window.setInterval(refresh, 8000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
+    return () => { active = false; window.clearInterval(timer); };
   }, []);
 
   return (
-    <div className="flex h-full min-h-[560px] flex-col overflow-hidden rounded-lg border border-edge bg-panel">
-      <div className="flex items-center gap-2 border-b border-edge px-4 py-3">
-        <Activity size={17} className="text-accent" aria-hidden="true" />
-        <h2 className="text-sm font-medium text-white">Protocol activity</h2>
-        <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-ok">
-          <Radio size={13} aria-hidden="true" /> Live
-        </span>
+    <div className="terminal-shell">
+      <header className="terminal-header">
+        <div><Activity size={16} /><span>Protocol proof</span></div>
+        <span className="terminal-live"><Radio size={12} /> LIVE</span>
+      </header>
+
+      <div className="protocol-stack" aria-label="Protocol status">
+        <Protocol icon={ShieldCheck} title="Challenge" value="x402 v2" />
+        <Protocol icon={CheckCircle2} title="Network" value="X Layer" />
+        <Protocol icon={ReceiptText} title="Asset" value="USDT0" />
       </div>
 
-      <section className="min-h-0 flex-1 border-b border-edge" aria-label="Request trace">
-        <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted">
-          <span>Request trace</span>
-          <span className="ml-auto font-mono">/scan</span>
-        </div>
-        <div ref={traceRef} className="h-[250px] overflow-y-auto px-4 pb-4 font-mono text-xs leading-6">
+      <section className="trace-section" aria-label="Request trace">
+        <div className="terminal-section-title"><span>REQUEST TRACE</span><span>POST /scan</span></div>
+        <div ref={traceRef} className="trace-log">
           {log.length === 0 ? (
-            <p className="text-gray-600">Awaiting request</p>
+            <div className="awaiting-trace"><span className="trace-cursor" />Awaiting document signal</div>
           ) : (
             log.map((event, index) => (
-              <div key={`${index}-${event.text}`} className={`${COLORS[event.kind]} grid grid-cols-[18px_1fr] gap-1`}>
-                <span className="select-none opacity-50">{String(index + 1).padStart(2, "0")}</span>
-                <span className="break-words">{event.text}</span>
+              <div key={`${index}-${event.text}`} className={`trace-row trace-${event.kind}`}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <p>{event.text}</p>
               </div>
             ))
           )}
         </div>
       </section>
 
-      <section className="min-h-0 flex-1" aria-label="Real settlements">
-        <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted">
-          <ReceiptText size={14} aria-hidden="true" />
-          <span>Real settlements</span>
-          <span className="ml-auto font-mono">{transactions.length}</span>
-        </div>
-        <div className="h-[250px] overflow-y-auto px-4 pb-4">
+      <section className="settlement-section" aria-label="Real settlements">
+        <div className="terminal-section-title"><span>REAL SETTLEMENTS</span><span>{String(transactions.length).padStart(2, "0")}</span></div>
+        <div className="settlement-list">
           {transactions.length === 0 ? (
-            <p className="font-mono text-xs text-gray-600">No settled payments</p>
-          ) : (
-            <div className="divide-y divide-edge">
-              {transactions.map((transaction) => (
-                <div key={transaction.tx_hash} className="py-3 text-xs">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium text-white">{transaction.service}</span>
-                    <span className="font-mono text-ok">+{transaction.amount} {transaction.asset}</span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-2 text-muted">
-                    <span className="font-mono">{transaction.chain}</span>
-                    <a
-                      href={`https://www.oklink.com/x-layer/tx/${transaction.tx_hash}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      title="Open transaction in OKLink"
-                      className="ml-auto inline-flex items-center gap-1 font-mono text-gray-400 hover:text-white"
-                    >
-                      {transaction.tx_hash.slice(0, 8)}...{transaction.tx_hash.slice(-6)}
-                      <ExternalLink size={12} aria-hidden="true" />
-                    </a>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+            <div className="empty-settlement"><ReceiptText size={18} /><span>No settled payments in this feed</span></div>
+          ) : transactions.map((transaction) => (
+            <article key={transaction.tx_hash}>
+              <div className="settlement-main">
+                <span className="settlement-mark"><CheckCircle2 size={14} /></span>
+                <div><strong>{transaction.service}</strong><small>{transaction.chain} · verified</small></div>
+                <b>+{transaction.amount} {transaction.asset}</b>
+              </div>
+              <a href={`https://www.oklink.com/x-layer/tx/${transaction.tx_hash}`} target="_blank" rel="noreferrer" title="Open transaction in OKLink">
+                {transaction.tx_hash.slice(0, 10)}...{transaction.tx_hash.slice(-6)}
+                <ArrowUpRight size={12} />
+              </a>
+            </article>
+          ))}
         </div>
       </section>
+
+      <footer className="terminal-footer"><span className="live-dot" /> Production endpoint · cryptographic receipts only</footer>
     </div>
   );
+}
+
+function Protocol({ icon: Icon, title, value }: { icon: typeof ShieldCheck; title: string; value: string }) {
+  return <div><Icon size={14} /><span>{title}</span><strong>{value}</strong></div>;
 }

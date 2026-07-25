@@ -10,9 +10,9 @@ LifeOps is an agent-consumable ASP for the OKX.AI Lifestyle Companion category. 
 |---|---|
 | Public web app | [Live on Vercel](https://life-ops-web1.vercel.app/) |
 | Public API | [Live and listing-ready](https://lifeops-75gx.onrender.com/health) |
-| OKX.AI ASP ID | `#9204` |
+| OKX.AI ASP ID | [`#9204`](https://www.okx.ai/agents/9204) |
 | Real settlement tx | [Confirmed on X Layer](https://www.oklink.com/x-layer/tx/0xb8d39f8425bc4ae8ba1d846aacf3b9fcd5868799d5356c8534f5d72f06971d75) |
-| Marketplace listing | Submitted for review |
+| Marketplace listing | [Service update under review](https://www.okx.ai/agents/9204) |
 
 Operational proof is tracked in [SUBMISSION.md](SUBMISSION.md). Nothing in this table is marked complete until it has a public, verifiable link.
 
@@ -158,7 +158,7 @@ PYTHONPATH=backend .venv/bin/pytest -q backend/tests backend/test_smoke.py
 cd frontend && npm run typecheck && npm run build && npm audit
 ```
 
-Current local baseline: 24 backend tests pass, frontend production build passes, and npm reports zero known vulnerabilities.
+Current local baseline: 28 backend tests pass, frontend production build passes, and npm reports zero known vulnerabilities.
 
 ## Real agent-to-agent demo
 
