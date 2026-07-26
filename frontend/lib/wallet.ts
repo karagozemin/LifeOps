@@ -52,6 +52,28 @@ export async function disconnectOkxWallet(): Promise<void> {
   }
 }
 
+function withWalletTimeout<T>(promise: Promise<T>, action: string, ms = 45000): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(
+        new Error(
+          `OKX Wallet did not respond to "${action}". Open the OKX extension \u2014 there may be a pending request waiting for your approval, then try again.`
+        )
+      );
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 export async function connectOkxWallet(): Promise<{
   address: `0x${string}`;
   provider: InjectedProvider;
@@ -61,7 +83,10 @@ export async function connectOkxWallet(): Promise<{
     throw new Error("OKX Wallet was not found. Install or enable the OKX Wallet browser extension first.");
   }
 
-  const accounts = await provider.request<string[]>({ method: "eth_requestAccounts" });
+  const accounts = await withWalletTimeout(
+    provider.request<string[]>({ method: "eth_requestAccounts" }),
+    "connect account"
+  );
   if (!accounts[0]) throw new Error("OKX Wallet did not return an account.");
 
   await ensureXLayer(provider);
@@ -69,29 +94,38 @@ export async function connectOkxWallet(): Promise<{
 }
 
 export async function ensureXLayer(provider: InjectedProvider): Promise<void> {
-  const currentChain = await provider.request<string>({ method: "eth_chainId" });
+  const currentChain = await withWalletTimeout(
+    provider.request<string>({ method: "eth_chainId" }),
+    "read network"
+  );
   if (currentChain.toLowerCase() === X_LAYER_CHAIN_ID) return;
 
   try {
-    await provider.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: X_LAYER_CHAIN_ID }],
-    });
+    await withWalletTimeout(
+      provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: X_LAYER_CHAIN_ID }],
+      }),
+      "switch to X Layer"
+    );
   } catch (caught) {
     const error = caught as ProviderError;
     if (error.code !== 4902) throw caught;
-    await provider.request({
-      method: "wallet_addEthereumChain",
-      params: [
-        {
-          chainId: X_LAYER_CHAIN_ID,
-          chainName: "X Layer Mainnet",
-          nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
-          rpcUrls: ["https://rpc.xlayer.tech"],
-          blockExplorerUrls: ["https://www.oklink.com/xlayer"],
-        },
-      ],
-    });
+    await withWalletTimeout(
+      provider.request({
+        method: "wallet_addEthereumChain",
+        params: [
+          {
+            chainId: X_LAYER_CHAIN_ID,
+            chainName: "X Layer Mainnet",
+            nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
+            rpcUrls: ["https://rpc.xlayer.tech"],
+            blockExplorerUrls: ["https://www.oklink.com/xlayer"],
+          },
+        ],
+      }),
+      "add X Layer network"
+    );
   }
 }
 
@@ -107,13 +141,16 @@ export function createOkxSigner(
   return {
     address,
     async signTypedData({ domain, types, primaryType, message }) {
-      return walletClient.signTypedData({
-        account: address,
-        domain: domain as TypedDataDomain,
-        types: types as TypedData,
-        primaryType,
-        message,
-      });
+      return withWalletTimeout(
+        walletClient.signTypedData({
+          account: address,
+          domain: domain as TypedDataDomain,
+          types: types as TypedData,
+          primaryType,
+          message,
+        }),
+        "sign payment authorization"
+      );
     },
   };
 }
