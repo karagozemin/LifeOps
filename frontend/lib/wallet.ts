@@ -36,6 +36,22 @@ export async function connectedOkxAccount(): Promise<`0x${string}` | null> {
   return accounts[0] ? getAddress(accounts[0]) : null;
 }
 
+export async function disconnectOkxWallet(): Promise<void> {
+  const provider = getOkxProvider();
+  if (!provider) return;
+  try {
+    // Ask OKX Wallet to revoke the eth_accounts permission so the next connect
+    // prompts the account picker again. Not every wallet build supports this,
+    // so failures are swallowed and the caller still clears local state.
+    await provider.request({
+      method: "wallet_revokePermissions",
+      params: [{ eth_accounts: {} }],
+    });
+  } catch {
+    // Ignore: local state reset in the UI is the real source of truth.
+  }
+}
+
 export async function connectOkxWallet(): Promise<{
   address: `0x${string}`;
   provider: InjectedProvider;

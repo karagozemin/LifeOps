@@ -30,6 +30,7 @@ import type { LifeOpsResult, PaymentRequirements, Service, SettlementReceipt } f
 import {
   connectOkxWallet,
   connectedOkxAccount,
+  disconnectOkxWallet,
   shortAddress,
   walletErrorMessage,
   type InjectedProvider,
@@ -121,6 +122,22 @@ export default function Home() {
       setWalletAddress(connection.address);
     } catch (caught) {
       setError(walletErrorMessage(caught));
+    }
+  }
+
+  async function disconnectWallet() {
+    if (loading || preparingPayment) return;
+    setError(null);
+    setPaymentReview(null);
+    setWalletAddress(null);
+    await disconnectOkxWallet();
+  }
+
+  function handleWalletButton() {
+    if (walletAddress) {
+      void disconnectWallet();
+    } else {
+      void connectWalletOnly();
     }
   }
 
@@ -424,8 +441,14 @@ export default function Home() {
               </div>
               <div className="privacy-note"><Fingerprint size={15} /> Processed transiently</div>
               <div className="run-controls">
-                <button type="button" onClick={connectWalletOnly} className={`wallet-button ${walletAddress ? "connected" : ""}`}>
-                  <Wallet size={15} />
+                <button
+                  type="button"
+                  onClick={handleWalletButton}
+                  disabled={loading || preparingPayment}
+                  title={walletAddress ? "Click to disconnect OKX Wallet" : "Connect OKX Wallet"}
+                  className={`wallet-button ${walletAddress ? "connected" : ""}`}
+                >
+                  {walletAddress ? <X size={15} /> : <Wallet size={15} />}
                   <span>{walletAddress ? shortAddress(walletAddress) : "Connect OKX"}</span>
                 </button>
                 <div className="run-actions">
