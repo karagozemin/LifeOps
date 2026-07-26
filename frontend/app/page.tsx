@@ -146,11 +146,17 @@ export default function Home() {
     setPreparingPayment(true);
     setError(null);
     try {
+      console.log("[verified] step 1: connecting wallet");
       const connection = await connectOkxWallet();
+      console.log("[verified] step 2: wallet connected", connection.address);
       setWalletAddress(connection.address);
+      console.log("[verified] step 3: requesting quote", { service, caller });
       const requirement = await paymentQuote(text, service, caller);
+      console.log("[verified] step 4: quote received", requirement);
       setPaymentReview({ requirement, address: connection.address, provider: connection.provider });
+      console.log("[verified] step 5: paymentReview set -> modal should open");
     } catch (caught) {
+      console.error("[verified] FAILED:", caught);
       // Surface the real server/quote error (e.g. invalid payTo) instead of a
       // generic wallet message so misconfigured payment terms are visible.
       const message = caught instanceof Error ? caught.message : walletErrorMessage(caught);
