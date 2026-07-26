@@ -173,17 +173,29 @@ export async function verifiedScan(
   const fetchWithPayment = wrapFetchWithPaymentFromConfig(observedFetch, {
     schemes: [{ network: X_LAYER, client: new ExactEvmScheme(createOkxSigner(provider, address)) }],
     paymentRequirementsSelector: (_version, candidates) => {
+      console.error("[x402] approved requirement:", approved);
+      console.error("[x402] candidates from wrapper:", JSON.stringify(candidates, null, 2));
       const matched = candidates.find((candidate) => sameRequirement(candidate, approved));
-      if (!matched) throw new Error("Payment terms changed after confirmation. No payment was authorized.");
+      if (!matched) {
+        console.error("[x402] NO MATCH — sameRequirement() rejected every candidate.");
+        throw new Error("Payment terms changed after confirmation. No payment was authorized.");
+      }
+      console.error("[x402] matched OK, handing to signer:", matched);
       return matched;
     },
   });
 
-  const response = await fetchWithPayment(`${API_BASE}/scan`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, service, caller }),
-  });
+  let response: Response;
+  try {
+    response = await fetchWithPayment(`${API_BASE}/scan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, service, caller }),
+    });
+  } catch (err) {
+    console.error("[x402] wrapFetchWithPayment threw BEFORE returning a response:", err);
+    throw err;
+  }
   if (!response.ok) {
     throw await responseError(response, `Verified run failed with HTTP ${response.status}.`);
   }
