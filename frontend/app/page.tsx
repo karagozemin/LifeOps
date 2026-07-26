@@ -458,14 +458,17 @@ export default function Home() {
                   <span>{walletAddress ? shortAddress(walletAddress) : "Connect OKX"}</span>
                 </button>
                 <div className="run-actions">
-                  <button type="button" onClick={() => runScan()} disabled={loading || preparingPayment || !text.trim()} className="preview-button">
-                    <ScanLine size={16} />
-                    <span>{loading && runMode === "preview" ? "Reading" : "Preview"}</span>
-                  </button>
-                  <button type="button" onClick={prepareVerifiedRun} disabled={loading || preparingPayment || !text.trim()} className="run-button verified-button">
-                    <span>{preparingPayment ? "Preparing quote" : loading && runMode === "verified" ? "Settling" : "Verified run"}</span>
-                    {loading || preparingPayment ? <span className="button-loader" /> : <ShieldCheck size={17} />}
-                  </button>
+                  {walletAddress ? (
+                    <button type="button" onClick={prepareVerifiedRun} disabled={loading || preparingPayment || !text.trim()} className="run-button verified-button">
+                      <span>{preparingPayment ? "Preparing quote" : loading && runMode === "verified" ? "Settling" : "Verified run"}</span>
+                      {loading || preparingPayment ? <span className="button-loader" /> : <ShieldCheck size={17} />}
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => runScan()} disabled={loading || preparingPayment || !text.trim()} className="preview-button">
+                      <ScanLine size={16} />
+                      <span>{loading && runMode === "preview" ? "Reading" : "Preview"}</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
