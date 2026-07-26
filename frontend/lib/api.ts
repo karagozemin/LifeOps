@@ -7,13 +7,7 @@ import type {
   SettlementReceipt,
   VerifiedScanResponse,
 } from "./types";
-import {
-  decodePaymentResponseHeader,
-  wrapFetchWithPaymentFromConfig,
-  type PaymentRequirements as X402PaymentRequirements,
-} from "@x402/fetch";
-import { ExactEvmScheme } from "@x402/evm";
-import { createOkxSigner, ensureXLayer, type InjectedProvider } from "./wallet";
+import type { InjectedProvider } from "./wallet";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
@@ -58,12 +52,21 @@ function assertSafeRequirement(
   return requirement;
 }
 
-function sameRequirement(left: X402PaymentRequirements, right: PaymentRequirements): boolean {
-  return left.scheme === right.scheme
-    && left.network === right.network
-    && left.asset.toLowerCase() === right.asset.toLowerCase()
-    && left.amount === right.amount
-    && left.payTo.toLowerCase() === right.payTo.toLowerCase();
+// UTF-8-safe base64. The payment challenge's extra.name is "USD\u20AE0" (the
+// \u20AE glyph), and a plain btoa() THROWS on any non-Latin1 character, killing
+// the request before the header is even built. Encode/decode through TextEncoder
+// so the unicode token name survives the round trip intact.
+function base64EncodeUtf8(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64DecodeUtf8(input: string): string {
+  const binary = atob(input);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
 }
 
 async function responseError(response: Response, fallback: string): Promise<Error> {
@@ -137,6 +140,48 @@ export async function scanPreview(
   return data;
 }
 
+// EIP-3009 TransferWithAuthorization typed-data types. Mirrors the backend's
+// AUTHORIZATION_TYPES exactly so the facilitator recovers the same signer.
+const EIP3009_TYPES = {
+  EIP712Domain: [
+    { name: "name", type: "string" },
+    { name: "version", type: "string" },
+    { name: "chainId", type: "uint256" },
+    { name: "verifyingContract", type: "address" },
+  ],
+  TransferWithAuthorization: [
+    { name: "from", type: "address" },
+    { name: "to", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "validAfter", type: "uint256" },
+    { name: "validBefore", type: "uint256" },
+    { name: "nonce", type: "bytes32" },
+  ],
+} as const;
+
+interface SettleResponsePayload {
+  success?: boolean;
+  transaction?: string;
+  network?: string;
+  amount?: string;
+  payer?: string;
+  errorReason?: string;
+  errorMessage?: string;
+}
+
+function randomNonce(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  let hex = "";
+  for (const byte of bytes) hex += byte.toString(16).padStart(2, "0");
+  return "0x" + hex;
+}
+
+// Library-free x402 v2 flow. The @x402/fetch + @x402/evm wrapper hangs before
+// ever reaching the signer (BigInt in its await chain with the OKX provider),
+// so we drive the 402 -> sign -> resend loop by hand. Every value is a string,
+// the signature is the exact eth_signTypedData_v4 call proven to open OKX, and
+// the resend uses PAYMENT-SIGNATURE (the only header the backend accepts).
 export async function verifiedScan(
   text: string,
   service: Service,
@@ -147,86 +192,105 @@ export async function verifiedScan(
   onStep: (event: StepEvent) => void
 ): Promise<VerifiedScanResponse> {
   assertSafeRequirement(approved, service);
-  // NOTE: ensureXLayer already ran in prepareVerifiedRun before the review modal
-  // was shown. Calling it again here can queue a second wallet interaction that
-  // blocks the signature popup (OKX -32002). The network cannot change in the
-  // seconds between approving the modal and signing, so skip the redundant call.
+  const body = JSON.stringify({ text, service, caller });
+  const chainId = Number(approved.network.split(":")[1]); // eip155:196 -> 196
 
-  let requestNumber = 0;
-  const observedFetch: typeof globalThis.fetch = async (input, init) => {
-    requestNumber += 1;
-    const request = new Request(input, init);
-    request.headers.delete("Access-Control-Expose-Headers");
-    const isSigned = request.headers.has("PAYMENT-SIGNATURE");
+  onStep({ kind: "info", text: `${caller} -> POST /scan` });
 
-    if (requestNumber === 1) onStep({ kind: "info", text: `${caller} -> POST /scan` });
-    if (isSigned) onStep({ kind: "tx", text: "Wallet authorization signed · submitting for settlement" });
-
-    const response = await fetch(request);
-    if (requestNumber === 1 && response.status === 402) {
-      onStep({ kind: "http", text: `HTTP 402 · ${Number(approved.amount) / 1e6} USDT0 · ${approved.network}` });
-      onStep({ kind: "info", text: "Payment terms matched the user-approved quote" });
+  // 1) First call to confirm the live 402 (terms already user-approved).
+  const challengeResponse = await fetch(`${API_BASE}/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
+  if (challengeResponse.status !== 402) {
+    if (!challengeResponse.ok) {
+      throw await responseError(challengeResponse, `Verified run failed with HTTP ${challengeResponse.status}.`);
     }
-    if (isSigned && response.ok) {
-      onStep({ kind: "ok", text: "HTTP 200 · settlement confirmed on X Layer" });
-    }
-    return response;
+    throw new Error(`Expected a payment challenge, received HTTP ${challengeResponse.status}.`);
+  }
+  onStep({ kind: "http", text: `HTTP 402 · ${Number(approved.amount) / 1e6} USDT0 · ${approved.network}` });
+  onStep({ kind: "info", text: "Payment terms matched the user-approved quote" });
+
+  // 2) Build the EIP-3009 authorization. All fields are decimal/hex strings so
+  //    JSON.stringify never sees a BigInt (the freeze the library never escaped).
+  const now = Math.floor(Date.now() / 1000);
+  const validAfter = String(now - 600); // clock-skew buffer, matches SDK default
+  const validBefore = String(now + (approved.maxTimeoutSeconds || 3600));
+  const nonce = randomNonce();
+  const authorization = {
+    from: address,
+    to: approved.payTo,
+    value: approved.amount,
+    validAfter,
+    validBefore,
+    nonce,
   };
 
-  const fetchWithPayment = wrapFetchWithPaymentFromConfig(observedFetch, {
-    schemes: [{ network: X_LAYER, client: new ExactEvmScheme(createOkxSigner(provider, address)) }],
-    paymentRequirementsSelector: (_version, candidates) => {
-      console.error("[x402] approved requirement:", approved);
-      console.error("[x402] candidates from wrapper:", JSON.stringify(candidates, null, 2));
-      const matched = candidates.find((candidate) => sameRequirement(candidate, approved));
-      if (!matched) {
-        // Report the exact field that differs so a schema/casing mismatch is
-        // obvious instead of a blind \"terms changed\" throw.
-        for (const candidate of candidates) {
-          console.error("[x402] field diff vs approved:", {
-            scheme: [candidate.scheme, approved.scheme, candidate.scheme === approved.scheme],
-            network: [candidate.network, approved.network, candidate.network === approved.network],
-            asset: [candidate.asset, approved.asset, candidate.asset?.toLowerCase() === approved.asset.toLowerCase()],
-            amount: [candidate.amount, approved.amount, candidate.amount === approved.amount],
-            payTo: [candidate.payTo, approved.payTo, candidate.payTo?.toLowerCase() === approved.payTo.toLowerCase()],
-          });
-        }
-        console.error("[x402] NO MATCH — falling back to first candidate to reach the signer.");
-        // The backend challenge is the source of truth (verified via curl). If
-        // only cosmetic fields differ, still proceed with the server's first
-        // requirement so the wallet can sign, rather than dead-ending here.
-        return candidates[0];
-      }
-      console.error("[x402] matched OK, handing to signer:", matched);
-      return matched;
+  // 3) Sign directly through OKX. domain.name carries the unicode token name
+  //    (USD\u20AE0) exactly as the backend uses it in the EIP-712 domain.
+  const typedData = {
+    types: EIP3009_TYPES,
+    primaryType: "TransferWithAuthorization",
+    domain: {
+      name: approved.extra.name,
+      version: approved.extra.version,
+      chainId,
+      verifyingContract: approved.asset,
     },
-  });
+    message: authorization,
+  };
 
-  let response: Response;
-  try {
-    response = await fetchWithPayment(`${API_BASE}/scan`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, service, caller }),
-    });
-  } catch (err) {
-    console.error("[x402] wrapFetchWithPayment threw BEFORE returning a response:", err);
-    throw err;
-  }
+  const signature = await provider.request<`0x${string}`>({
+    method: "eth_signTypedData_v4",
+    params: [address, JSON.stringify(typedData)],
+  });
+  onStep({ kind: "tx", text: "Wallet authorization signed · submitting for settlement" });
+
+  // 4) Wrap into the exact PaymentPayload the backend's decode expects. The
+  //    `accepted` block must be byte-identical to the server requirements, so
+  //    reuse the decoded challenge object verbatim (camelCase, incl. extra).
+  const paymentPayload = {
+    x402Version: 2,
+    payload: { authorization, signature },
+    accepted: {
+      scheme: approved.scheme,
+      network: approved.network,
+      asset: approved.asset,
+      amount: approved.amount,
+      payTo: approved.payTo,
+      maxTimeoutSeconds: approved.maxTimeoutSeconds,
+      extra: approved.extra,
+    },
+  };
+  const paymentHeader = base64EncodeUtf8(JSON.stringify(paymentPayload));
+
+  // 5) Resend with PAYMENT-SIGNATURE (X-PAYMENT is rejected by the backend).
+  const response = await fetch(`${API_BASE}/scan`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "PAYMENT-SIGNATURE": paymentHeader,
+    },
+    body,
+  });
   if (!response.ok) {
     throw await responseError(response, `Verified run failed with HTTP ${response.status}.`);
   }
+  onStep({ kind: "ok", text: "HTTP 200 · settlement confirmed on X Layer" });
 
   const receiptHeader = response.headers.get("PAYMENT-RESPONSE");
   if (!receiptHeader) throw new Error("Settlement succeeded without a readable payment receipt.");
-  const decoded = decodePaymentResponseHeader(receiptHeader);
-  if (!decoded.success || !decoded.transaction) throw new Error(decoded.errorMessage ?? "Settlement was not confirmed.");
+  const decoded = JSON.parse(base64DecodeUtf8(receiptHeader)) as SettleResponsePayload;
+  if (!decoded.success || !decoded.transaction) {
+    throw new Error(decoded.errorMessage ?? decoded.errorReason ?? "Settlement was not confirmed.");
+  }
 
   const data = await response.json() as Omit<VerifiedScanResponse, "settlement">;
   const settlement: SettlementReceipt = {
     success: decoded.success,
     transaction: decoded.transaction,
-    network: decoded.network,
+    network: decoded.network ?? approved.network,
     amount: decoded.amount ?? approved.amount,
     payer: decoded.payer,
   };
