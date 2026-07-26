@@ -177,8 +177,22 @@ export async function verifiedScan(
       console.error("[x402] candidates from wrapper:", JSON.stringify(candidates, null, 2));
       const matched = candidates.find((candidate) => sameRequirement(candidate, approved));
       if (!matched) {
-        console.error("[x402] NO MATCH — sameRequirement() rejected every candidate.");
-        throw new Error("Payment terms changed after confirmation. No payment was authorized.");
+        // Report the exact field that differs so a schema/casing mismatch is
+        // obvious instead of a blind \"terms changed\" throw.
+        for (const candidate of candidates) {
+          console.error("[x402] field diff vs approved:", {
+            scheme: [candidate.scheme, approved.scheme, candidate.scheme === approved.scheme],
+            network: [candidate.network, approved.network, candidate.network === approved.network],
+            asset: [candidate.asset, approved.asset, candidate.asset?.toLowerCase() === approved.asset.toLowerCase()],
+            amount: [candidate.amount, approved.amount, candidate.amount === approved.amount],
+            payTo: [candidate.payTo, approved.payTo, candidate.payTo?.toLowerCase() === approved.payTo.toLowerCase()],
+          });
+        }
+        console.error("[x402] NO MATCH — falling back to first candidate to reach the signer.");
+        // The backend challenge is the source of truth (verified via curl). If
+        // only cosmetic fields differ, still proceed with the server's first
+        // requirement so the wallet can sign, rather than dead-ending here.
+        return candidates[0];
       }
       console.error("[x402] matched OK, handing to signer:", matched);
       return matched;

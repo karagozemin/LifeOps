@@ -1,4 +1,4 @@
-import { createWalletClient, custom, getAddress, type TypedData, type TypedDataDomain } from "viem";
+import { getAddress } from "viem";
 import type { ClientEvmSigner } from "@x402/evm";
 
 const X_LAYER_CHAIN_ID = "0xc4";
@@ -133,21 +133,23 @@ export function createOkxSigner(
   provider: InjectedProvider,
   address: `0x${string}`
 ): ClientEvmSigner {
-  const walletClient = createWalletClient({
-    account: address,
-    transport: custom(provider),
-  });
-
   return {
     address,
     async signTypedData({ domain, types, primaryType, message }) {
+      // Sign directly through the OKX provider with eth_signTypedData_v4 \u2014 the
+      // exact call verified to open the wallet in the browser console. This
+      // avoids viem's custom(provider) transport, which added a failure surface
+      // without changing the underlying RPC call.
+      const payload = {
+        domain,
+        types,
+        primaryType,
+        message,
+      };
       return withWalletTimeout(
-        walletClient.signTypedData({
-          account: address,
-          domain: domain as TypedDataDomain,
-          types: types as TypedData,
-          primaryType,
-          message,
+        provider.request<`0x${string}`>({
+          method: "eth_signTypedData_v4",
+          params: [address, JSON.stringify(payload)],
         }),
         "sign payment authorization"
       );
