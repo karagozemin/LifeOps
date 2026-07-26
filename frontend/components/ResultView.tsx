@@ -6,12 +6,13 @@ import {
   CalendarDays,
   Check,
   CircleDollarSign,
+  CheckCircle2,
   Download,
   FileCheck2,
   Fingerprint,
   Quote,
 } from "lucide-react";
-import type { LifeOpsResult, Obligation } from "@/lib/types";
+import type { LifeOpsResult, Obligation, SettlementReceipt } from "@/lib/types";
 import { icsDownloadUrl } from "@/lib/api";
 
 function statusMeta(obligation: Obligation) {
@@ -20,7 +21,15 @@ function statusMeta(obligation: Obligation) {
   return { label: `${obligation.days_remaining} days`, tone: "upcoming" };
 }
 
-export default function ResultView({ result, icsUrl }: { result: LifeOpsResult; icsUrl?: string | null }) {
+export default function ResultView({
+  result,
+  icsUrl,
+  settlement,
+}: {
+  result: LifeOpsResult;
+  icsUrl?: string | null;
+  settlement?: SettlementReceipt | null;
+}) {
   const isMulti = result.document_type === "multi";
 
   return (
@@ -34,6 +43,7 @@ export default function ResultView({ result, icsUrl }: { result: LifeOpsResult; 
           </div>
         </div>
         <div className="result-meta">
+          <span>{settlement ? "verified run" : "web preview"}</span>
           <span>{result.document_type.replaceAll("_", " ")}</span>
           {isMulti && <span>{result.documents_scanned} documents</span>}
           <span>{(result.confidence * 100).toFixed(0)}% confidence</span>
@@ -46,6 +56,18 @@ export default function ResultView({ result, icsUrl }: { result: LifeOpsResult; 
           </a>
         )}
       </header>
+
+      {settlement && (
+        <section className="verified-receipt" aria-label="Verified settlement receipt">
+          <div className="receipt-status"><CheckCircle2 size={18} /><span>SETTLED ON X LAYER</span></div>
+          <div><span>Amount</span><strong>{(Number(settlement.amount) / 1e6).toFixed(2)} USDT0</strong></div>
+          <div><span>Payer</span><strong>{settlement.payer ? `${settlement.payer.slice(0, 6)}...${settlement.payer.slice(-4)}` : "Verified wallet"}</strong></div>
+          <a href={`https://www.oklink.com/x-layer/tx/${settlement.transaction}`} target="_blank" rel="noreferrer">
+            View receipt
+            <ArrowUpRight size={14} />
+          </a>
+        </section>
+      )}
 
       <section className="risk-overview" aria-label="Risk overview">
         <div className="risk-primary">

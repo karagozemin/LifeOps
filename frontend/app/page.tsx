@@ -17,13 +17,23 @@ import {
   Layers3,
   LockKeyhole,
   ScanLine,
+  ShieldCheck,
   Sparkles,
   UserRound,
+  Wallet,
   WalletCards,
+  X,
 } from "lucide-react";
 import { SAMPLES } from "@/lib/samples";
-import { scanPreview, type StepEvent } from "@/lib/api";
-import type { LifeOpsResult, Service } from "@/lib/types";
+import { paymentQuote, scanPreview, verifiedScan, type StepEvent } from "@/lib/api";
+import type { LifeOpsResult, PaymentRequirements, Service, SettlementReceipt } from "@/lib/types";
+import {
+  connectOkxWallet,
+  connectedOkxAccount,
+  shortAddress,
+  walletErrorMessage,
+  type InjectedProvider,
+} from "@/lib/wallet";
 import TxTerminal from "@/components/TxTerminal";
 import ResultView from "@/components/ResultView";
 
@@ -45,6 +55,12 @@ const PROOF = [
   { value: "0 storage", label: "Transient processing" },
 ];
 
+interface PaymentReview {
+  requirement: PaymentRequirements;
+  address: `0x${string}`;
+  provider: InjectedProvider;
+}
+
 export default function Home() {
   const [text, setText] = useState("");
   const [caller, setCaller] = useState("human");
@@ -57,9 +73,15 @@ export default function Home() {
   const [entered, setEntered] = useState(false);
   const [sampleId, setSampleId] = useState("");
   const [processingStep, setProcessingStep] = useState(0);
+  const [walletAddress, setWalletAddress] = useState<`0x${string}` | null>(null);
+  const [paymentReview, setPaymentReview] = useState<PaymentReview | null>(null);
+  const [preparingPayment, setPreparingPayment] = useState(false);
+  const [runMode, setRunMode] = useState<"preview" | "verified">("preview");
+  const [settlement, setSettlement] = useState<SettlementReceipt | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setEntered(true), 120);
+    connectedOkxAccount().then(setWalletAddress).catch(() => undefined);
     return () => window.clearTimeout(timer);
   }, []);
 
@@ -89,16 +111,49 @@ export default function Home() {
     setIcsUrl(null);
     setError(null);
     setLog([]);
+    setSettlement(null);
   }
 
-  async function runScan() {
+  async function connectWalletOnly() {
+    try {
+      setError(null);
+      const connection = await connectOkxWallet();
+      setWalletAddress(connection.address);
+    } catch (caught) {
+      setError(walletErrorMessage(caught));
+    }
+  }
+
+  async function prepareVerifiedRun() {
+    if (!text.trim() || loading || preparingPayment) return;
+    setPreparingPayment(true);
+    setError(null);
+    try {
+      const connection = await connectOkxWallet();
+      setWalletAddress(connection.address);
+      const requirement = await paymentQuote(text, service, caller);
+      setPaymentReview({ requirement, address: connection.address, provider: connection.provider });
+    } catch (caught) {
+      // Surface the real server/quote error (e.g. invalid payTo) instead of a
+      // generic wallet message so misconfigured payment terms are visible.
+      const message = caught instanceof Error ? caught.message : walletErrorMessage(caught);
+      setError(message);
+    } finally {
+      setPreparingPayment(false);
+    }
+  }
+
+  async function runScan(approved?: PaymentReview) {
     if (!text.trim() || loading) return;
     const startedAt = performance.now();
+    const mode = approved ? "verified" : "preview";
+    setRunMode(mode);
     setLoading(true);
     setError(null);
     setResult(null);
     setIcsUrl(null);
     setLog([]);
+    setSettlement(null);
     let visualEventIndex = 0;
     const push = (event: StepEvent) => {
       const delay = visualEventIndex * 300;
@@ -114,15 +169,26 @@ export default function Home() {
     }, 1650);
 
     try {
-      const data = await scanPreview(text, service, caller, push);
+      const data = approved
+        ? await verifiedScan(
+            text,
+            service,
+            caller,
+            approved.requirement,
+            approved.provider,
+            approved.address,
+            push
+          )
+        : await scanPreview(text, service, caller, push);
       const remainingDisplayTime = Math.max(0, 4200 - (performance.now() - startedAt));
       if (remainingDisplayTime > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, remainingDisplayTime));
       }
       setResult(data.result);
       setIcsUrl(data.ics_url);
+      if ("settlement" in data) setSettlement(data.settlement);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Request failed";
+      const message = approved ? walletErrorMessage(caught) : caught instanceof Error ? caught.message : "Request failed";
       setError(message);
       push({ kind: "error", text: message });
     } finally {
@@ -131,9 +197,59 @@ export default function Home() {
   }
 
   const selectedService = SERVICES.find((item) => item.id === service) ?? SERVICES[1];
+  const approvedAmount = paymentReview ? Number(paymentReview.requirement.amount) / 1e6 : 0;
 
   return (
     <main className="site-shell">
+      {paymentReview && (
+        <div className="payment-overlay" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setPaymentReview(null);
+        }}>
+          <section className="payment-dialog" role="dialog" aria-modal="true" aria-labelledby="payment-title">
+            <header className="payment-dialog-header">
+              <div className="payment-dialog-mark"><ShieldCheck size={19} /></div>
+              <div>
+                <span className="section-index">VERIFIED EXECUTION</span>
+                <h2 id="payment-title">Authorize one settled run</h2>
+              </div>
+              <button type="button" onClick={() => setPaymentReview(null)} className="dialog-close" title="Close payment review">
+                <X size={17} />
+                <span className="sr-only">Close payment review</span>
+              </button>
+            </header>
+
+            <div className="payment-amount">
+              <span>EXACT CHARGE</span>
+              <strong>{approvedAmount.toFixed(2)} <small>USDT0</small></strong>
+              <p>{paymentReview.requirement.amount} atomic units</p>
+            </div>
+
+            <dl className="payment-terms">
+              <div><dt>Network</dt><dd><span className="live-dot" /> X Layer mainnet</dd></div>
+              <div><dt>Service</dt><dd>{selectedService.label}</dd></div>
+              <div><dt>Wallet</dt><dd>{shortAddress(paymentReview.address)}</dd></div>
+              <div><dt>Recipient</dt><dd title={paymentReview.requirement.payTo}>{paymentReview.requirement.payTo}</dd></div>
+            </dl>
+
+            <div className="payment-truth">
+              <LockKeyhole size={16} />
+              <p>OKX Wallet will sign this exact USDT0 authorization. LifeOps releases the result only after settlement succeeds.</p>
+            </div>
+
+            <footer className="payment-actions">
+              <button type="button" onClick={() => setPaymentReview(null)} className="payment-cancel">Cancel</button>
+              <button type="button" onClick={() => {
+                const approved = paymentReview;
+                setPaymentReview(null);
+                void runScan(approved);
+              }} className="payment-confirm">
+                <Wallet size={16} />
+                Sign &amp; pay {approvedAmount.toFixed(2)} USDT0
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
       <nav className="site-nav" aria-label="Primary navigation">
         <div className="nav-inner">
           <a href="#top" className="brand-link" aria-label="LifeOps home">
@@ -307,10 +423,22 @@ export default function Home() {
                 <div><span>Caller</span><strong>{caller}</strong></div>
               </div>
               <div className="privacy-note"><Fingerprint size={15} /> Processed transiently</div>
-              <button type="button" onClick={runScan} disabled={loading || !text.trim()} className="run-button">
-                <span>{loading ? "Reading signals" : `Run ${selectedService.label}`}</span>
-                {loading ? <span className="button-loader" /> : <ArrowRight size={17} />}
-              </button>
+              <div className="run-controls">
+                <button type="button" onClick={connectWalletOnly} className={`wallet-button ${walletAddress ? "connected" : ""}`}>
+                  <Wallet size={15} />
+                  <span>{walletAddress ? shortAddress(walletAddress) : "Connect OKX"}</span>
+                </button>
+                <div className="run-actions">
+                  <button type="button" onClick={() => runScan()} disabled={loading || preparingPayment || !text.trim()} className="preview-button">
+                    <ScanLine size={16} />
+                    <span>{loading && runMode === "preview" ? "Reading" : "Preview"}</span>
+                  </button>
+                  <button type="button" onClick={prepareVerifiedRun} disabled={loading || preparingPayment || !text.trim()} className="run-button verified-button">
+                    <span>{preparingPayment ? "Preparing quote" : loading && runMode === "verified" ? "Settling" : "Verified run"}</span>
+                    {loading || preparingPayment ? <span className="button-loader" /> : <ShieldCheck size={17} />}
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -328,9 +456,9 @@ export default function Home() {
 
         <div id="analysis-result" className="result-anchor">
           {loading ? (
-            <ProcessingView step={processingStep} service={selectedService.label} />
+            <ProcessingView step={processingStep} service={selectedService.label} mode={runMode} />
           ) : result ? (
-            <ResultView result={result} icsUrl={icsUrl} />
+            <ResultView result={result} icsUrl={icsUrl} settlement={settlement} />
           ) : (
             <div className="empty-result">
               <div className="empty-visual" aria-hidden="true">
@@ -373,7 +501,7 @@ const PROCESSING_STEPS = [
   "Building your action plan",
 ];
 
-function ProcessingView({ step, service }: { step: number; service: string }) {
+function ProcessingView({ step, service, mode }: { step: number; service: string; mode: "preview" | "verified" }) {
   const progress = [18, 42, 68, 88][step] ?? 18;
 
   return (
@@ -385,10 +513,10 @@ function ProcessingView({ step, service }: { step: number; service: string }) {
       </div>
       <div className="processing-copy">
         <span className="section-index">02 / INTELLIGENCE</span>
-        <h3>LifeOps is reading the signals.</h3>
+        <h3>{mode === "verified" ? "LifeOps is settling the run." : "LifeOps is reading the signals."}</h3>
         <p>{PROCESSING_STEPS[step]}</p>
         <div className="processing-meter" aria-hidden="true"><span style={{ width: `${progress}%` }} /></div>
-        <div className="processing-meta"><span>{progress}%</span><span>{service}</span><span>Transient session</span></div>
+        <div className="processing-meta"><span>{progress}%</span><span>{service}</span><span>{mode === "verified" ? "Verified settlement" : "Free preview"}</span></div>
       </div>
       <ol className="processing-steps">
         {PROCESSING_STEPS.map((label, index) => (

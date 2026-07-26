@@ -251,6 +251,18 @@ a:focus-visible {
 .run-button:hover:not(:disabled) { background: var(--cyan-soft); border-color: var(--cyan-soft); transform: translateY(-1px); }
 .run-button:disabled { cursor: not-allowed; opacity: .35; }
 .button-loader { width: 14px; height: 14px; border: 2px solid rgba(0,0,0,.25); border-top-color: #001315; border-radius: 50%; animation: spin .8s linear infinite; }
+.run-controls { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.run-actions { display: flex; align-items: center; gap: 8px; }
+.wallet-button { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 15px; border: 1px solid #3a4649; border-radius: 4px; color: var(--text); background: #0b0e0f; font-size: 12px; font-weight: 600; white-space: nowrap; transition: border-color .2s ease, color .2s ease, transform .2s ease; }
+.wallet-button:hover { border-color: #5c6a6e; color: white; transform: translateY(-1px); }
+.wallet-button svg { color: var(--cyan); }
+.wallet-button.connected { border-color: rgba(89,221,163,.4); color: var(--green); background: rgba(89,221,163,.05); }
+.wallet-button.connected svg { color: var(--green); }
+.preview-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 16px; border: 1px solid #3a4649; border-radius: 4px; color: var(--text); background: #0d1112; font-size: 13px; font-weight: 650; white-space: nowrap; transition: border-color .2s ease, color .2s ease, background-color .2s ease, transform .2s ease; }
+.preview-button:hover:not(:disabled) { border-color: var(--cyan); color: var(--cyan-soft); transform: translateY(-1px); }
+.preview-button:disabled { cursor: not-allowed; opacity: .35; }
+.preview-button svg { color: var(--cyan); }
+.verified-button { min-width: 150px; margin-left: 0; white-space: nowrap; }
 .activity-panel { min-width: 0; min-height: 590px; overflow: hidden; }
 .activity-panel.is-focused { border-color: #48636a; box-shadow: 0 0 0 1px rgba(18,201,230,.1), 0 22px 60px rgba(0,0,0,.3); animation: protocolFocus 1.1s cubic-bezier(.2,.75,.2,1) both; }
 .error-banner { width: min(1480px, 100%); margin: 18px auto 0; padding: 14px 16px; border: 1px solid rgba(255,107,107,.45); border-radius: 4px; color: #ffb7b7; background: #1b1011; font-size: 13px; }
@@ -477,6 +489,10 @@ a:focus-visible {
   .service-selector button { min-height: 68px; }
   .run-row { flex-wrap: wrap; gap: 14px; padding: 14px 12px; }
   .privacy-note { margin-left: auto; }
+  .run-controls { width: 100%; margin-left: 0; flex-direction: column; align-items: stretch; }
+  .run-actions { width: 100%; }
+  .wallet-button { width: 100%; justify-content: center; }
+  .preview-button, .verified-button { flex: 1; min-width: 0; }
   .run-button { width: 100%; margin-left: 0; }
   .activity-panel { min-height: 540px; }
   .terminal-shell { min-height: 538px; }

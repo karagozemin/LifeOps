@@ -51,6 +51,17 @@ fi
 python -m pip install -q --upgrade pip
 python -m pip install -q -r requirements.txt
 
+# --- 4b) Load .env into the shell too (belt-and-suspenders) ------------------
+# app/__init__.py also loads it via python-dotenv, but exporting here guarantees
+# the vars are present even if the dotenv import is skipped for any reason.
+if [ -f .env ]; then
+  echo "-> loading backend/.env"
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
+
 # --- 5) Launch ---------------------------------------------------------------
 echo "-> LifeOps backend on http://localhost:8000"
 echo "  (without OPENAI_API_KEY the deterministic fallback is active - demo still works)"

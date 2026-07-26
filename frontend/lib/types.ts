@@ -62,6 +62,22 @@ export interface PreviewResponse {
   preview: true;
 }
 
+export interface SettlementReceipt {
+  success: boolean;
+  transaction: string;
+  network: string;
+  amount: string;
+  payer?: string;
+}
+
+export interface VerifiedScanResponse {
+  result: LifeOpsResult;
+  result_id: string;
+  ics_url: string | null;
+  payment: PaymentTx;
+  settlement: SettlementReceipt;
+}
+
 export interface PaymentRequirements {
   scheme: string;
   network: string;
