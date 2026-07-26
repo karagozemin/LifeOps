@@ -146,10 +146,17 @@ export function createOkxSigner(
         primaryType,
         message,
       };
+      // The x402 ExactEvmScheme passes numeric fields (value/validAfter/
+      // validBefore/chainId) as BigInt. Plain JSON.stringify THROWS on BigInt,
+      // which would kill the request before the wallet ever opens. Serialize
+      // BigInt as its decimal string so eth_signTypedData_v4 gets valid JSON.
+      const serialized = JSON.stringify(payload, (_key, value) =>
+        typeof value === "bigint" ? value.toString() : value
+      );
       return withWalletTimeout(
         provider.request<`0x${string}`>({
           method: "eth_signTypedData_v4",
-          params: [address, JSON.stringify(payload)],
+          params: [address, serialized],
         }),
         "sign payment authorization"
       );

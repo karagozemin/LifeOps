@@ -147,7 +147,10 @@ export async function verifiedScan(
   onStep: (event: StepEvent) => void
 ): Promise<VerifiedScanResponse> {
   assertSafeRequirement(approved, service);
-  await ensureXLayer(provider);
+  // NOTE: ensureXLayer already ran in prepareVerifiedRun before the review modal
+  // was shown. Calling it again here can queue a second wallet interaction that
+  // blocks the signature popup (OKX -32002). The network cannot change in the
+  // seconds between approving the modal and signing, so skip the redundant call.
 
   let requestNumber = 0;
   const observedFetch: typeof globalThis.fetch = async (input, init) => {
